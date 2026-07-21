@@ -1,0 +1,73 @@
+name: tieba_app
+description: "贝占口巴 - 贴吧阅读器"
+publish_to: 'none'
+version: 1.0.0+2002
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.1.0
+  crypto: ^3.0.3
+  cached_network_image: ^3.3.0
+  flutter_cache_manager: ^3.4.1
+  flutter_markdown: ^0.7.7+1
+  markdown: ^7.3.1
+  shared_preferences: ^2.0.0
+  gal: ^2.3.0
+  file_picker: ^8.1.7
+  flutter_local_notifications: ^19.0.0
+  timezone: ^0.10.0
+  flutter_timezone: ^4.1.0
+  webview_flutter: ^4.14.0
+  webview_flutter_android: ^4.12.0
+  video_player: ^2.10.0
+  hashlib: ^2.3.4
+  web_socket_channel: ^3.0.2
+  pointycastle: ^4.0.0
+  archive: ^4.0.7
+  enough_ascii_art: ^1.1.2
+  permission_handler: ^12.0.3
+  flutter_tts: ^4.2.5
+  sensors_plus: ^7.1.0
+  record: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.3
+  image: ^4.5.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/app_icon.png
+  min_sdk_android: 21
+  adaptive_icon_background: "#F2F3F5"
+  adaptive_icon_foreground: assets/app_icon.png
+  web:
+    generate: true
+    image_path: assets/app_icon.png
+    background_color: "#F2F3F5"
+    theme_color: "#F2F3F5"
+  windows:
+    generate: true
+    image_path: assets/app_icon.png
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: assets/app_icon.png
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/settings_icon.png
+    - assets/icons/like_outline.png
+    - assets/icons/like_filled.png
+    - assets/figlet/standard.flf
+    - assets/figlet/small.flf
+    - assets/figlet/block.flf

@@ -1,0 +1,51 @@
+import 'package:hashlib/hashlib.dart';
+
+void main() {
+  print('hello ${xxh32.convert('hello'.codeUnits).number().toRadixString(16)}');
+
+  final buff = [
+    67,
+    55,
+    55,
+    68,
+    53,
+    68,
+    48,
+    52,
+    68,
+    57,
+    52,
+    70,
+    53,
+    70,
+    53,
+    54,
+    67,
+    56,
+    65,
+    48,
+    65,
+    54,
+    68,
+    67,
+    51,
+    68,
+    66,
+    70,
+    50,
+    52,
+    48,
+    65,
+    255,
+    255,
+    255,
+    255,
+    255,
+    255,
+    116,
+    130,
+    161,
+    245,
+  ];
+  print('buff42 ${xxh32.convert(buff).number().toRadixString(16)}');
+}

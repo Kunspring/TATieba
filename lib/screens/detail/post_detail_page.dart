@@ -917,7 +917,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
                 },
                 childCount: _comments.length,
                 addAutomaticKeepAlives: false,
-                addRepaintBoundaries: true,
+                addRepaintBoundaries: false,
                 findChildIndexCallback: (Key key) {
                   if (key is ValueKey<String>) {
                     final index = _comments.indexWhere(

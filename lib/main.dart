@@ -32,6 +32,7 @@ import 'utils/debounced_callback.dart';
 import 'widgets/app_feature_guide.dart';
 import 'widgets/agent_companion/agent_companion_controller.dart';
 import 'widgets/root_shell_host.dart';
+import 'widgets/app_error_page.dart';
 
 /// 诊断用掉帧记录器（性能排查期开启）。每 3 秒汇报一次窗口内：
 /// - buildSlow：主线程(build)超 16ms 的帧数 → 指向定时器/GC/解析等主线程尖峰
@@ -76,6 +77,14 @@ void _installJankTracer() {
   });
 }
 
+void _reportFatal(Object error, StackTrace? stack) {
+  // 全局崩溃兜底汇聚点：runZonedGuarded 未捕获的异步错误与 FlutterError
+  // 都会走到这里。当前仅打印并保留扩展点；如需上报（Sentry 等）在此接入，
+  // 注意避免阻塞 UI。
+  debugPrint('[FATAL] ${error.toString()}');
+  if (stack != null) debugPrint(stack.toString());
+}
+
 Color _startupScaffoldColor() {
   return AppThemeService.instance.resolvedMode == ThemeMode.dark
       ? AppColors.darkScaffold
@@ -83,22 +92,47 @@ Color _startupScaffoldColor() {
 }
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  _installJankTracer();
-  PaintingBinding.instance.imageCache.maximumSize =
-      AppPerformance.imageCacheMaxEntries;
-  PaintingBinding.instance.imageCache.maximumSizeBytes =
-      AppPerformance.imageCacheMaxBytes;
-  await AppThemeService.instance.load();
-  AppSystemUi.apply(
-    AppThemeService.instance.resolvedMode == ThemeMode.dark
-        ? Brightness.dark
-        : Brightness.light,
-  );
-  runApp(ColoredBox(color: _startupScaffoldColor(), child: const TiebaApp()));
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(_initStartupWork());
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    _installJankTracer();
+    PaintingBinding.instance.imageCache.maximumSize =
+        AppPerformance.imageCacheMaxEntries;
+    PaintingBinding.instance.imageCache.maximumSizeBytes =
+        AppPerformance.imageCacheMaxBytes;
+    await AppThemeService.instance.load();
+    AppSystemUi.apply(
+      AppThemeService.instance.resolvedMode == ThemeMode.dark
+          ? Brightness.dark
+          : Brightness.light,
+    );
+    runApp(ColoredBox(color: _startupScaffoldColor(), child: const TiebaApp()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_initStartupWork());
+    });
+  }, (error, stack) {
+    // 兜底：zone 内未捕获的异步错误（网络回调、timer、future 等）。
+    _reportFatal(error, stack);
   });
+
+  // 框架层错误（build/layout/paint 阶段抛出的异常汇聚于此）。
+  FlutterError.onError = (details) {
+    FlutterError.dumpErrorToConsole(details, forceReport: true);
+    _reportFatal(details.exception, details.stack);
+  };
+
+  // 用友好错误页替换 Flutter 默认红屏（ErrorWidget.builder）。
+  ErrorWidget.builder = (details) {
+    return AppErrorPage(
+      details: details,
+      onRetry: () {
+        try {
+          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+        } catch (_) {
+          // 导航栈不可用时尽力而为，忽略。
+        }
+      },
+    );
+  };
 }
 
 Future<void> _initDeferredPrefs() async {

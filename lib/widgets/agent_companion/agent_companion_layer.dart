@@ -346,16 +346,18 @@ class InlineBarCompanion extends StatelessWidget {
                     height: kToolbarHeight,
                     child: Center(
                       child: RepaintBoundary(
-                        child: AgentKaomoji(
-                          mood: controller.displayMood,
-                          size: 20,
-                          shaking:
-                              controller.displayShaking &&
-                              !controller.companionWiggling,
-                          wiggling: controller.companionWiggling,
-                          color:
-                              controller.companionForegroundColor ??
-                              context.appColors.textPrimary,
+                        child: LifecycleTickerGate(
+                          child: AgentKaomoji(
+                            mood: controller.displayMood,
+                            size: 20,
+                            shaking:
+                                controller.displayShaking &&
+                                !controller.companionWiggling,
+                            wiggling: controller.companionWiggling,
+                            color:
+                                controller.companionForegroundColor ??
+                                context.appColors.textPrimary,
+                          ),
                         ),
                       ),
                     ),
@@ -606,16 +608,18 @@ class _DockedCompanion extends StatelessWidget {
                             vertical: 0,
                           ),
                           child: RepaintBoundary(
-                            child: AgentKaomoji(
-                              mood: controller.displayMood,
-                              size: 20,
-                              shaking:
-                                  controller.displayShaking &&
-                                  !controller.companionWiggling,
-                              wiggling: controller.companionWiggling,
-                              color:
-                                  controller.companionForegroundColor ??
-                                  colors.textPrimary,
+                            child: LifecycleTickerGate(
+                              child: AgentKaomoji(
+                                mood: controller.displayMood,
+                                size: 20,
+                                shaking:
+                                    controller.displayShaking &&
+                                    !controller.companionWiggling,
+                                wiggling: controller.companionWiggling,
+                                color:
+                                    controller.companionForegroundColor ??
+                                    colors.textPrimary,
+                              ),
                             ),
                           ),
                         ),

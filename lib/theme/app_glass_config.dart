@@ -30,11 +30,15 @@ class AppGlassConfig {
   final double fillAlphaStrong;
   final double borderWidth;
 
-  // 毛玻璃策略（2026-07-08 已彻底关闭模糊）：
+  // 玻璃面策略（2026-07-08 已彻底关闭模糊；2026-07-21 改为实色）：
   // - 三个模糊开关全部置 false → _GlassFrosting 中 sigma==0 → blurOn=false →
-  //   不创建任何 BackdropFilter，所有玻璃面退化为半透明色块，零 GPU 模糊开销。
+  //   不创建任何 BackdropFilter，零 GPU 模糊开销。
   // - 用户实测「仅固定栏模糊」在真机仍明显卡顿，故整体降级为色块。
-  // - 若后续想恢复：按「固定栏优先」只把 backdropBlurAppBar / backdropBlurDock
+  // - 2026-07-21：进一步将半透明填充/边框改为完全不透明实色
+  //   （glassFill/glassFillStrong → card 实色，glassBorder → borderLight 实色；
+  //   暗色对应 darkCard / darkBorderLight）。所有玻璃面、AppBar、底栏、陪伴层、
+  //   聊天页边框统一实色化，不再透出底层内容。
+  // - 若后续想恢复模糊：按「固定栏优先」只把 backdropBlurAppBar / backdropBlurDock
   //   置 true（面板 backdropBlurPanels 保持 false，因其覆盖滚动内容会每帧重算）。
   static const current = AppGlassConfig(
     backdropBlurSigma: 10,

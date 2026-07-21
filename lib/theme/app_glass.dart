@@ -803,9 +803,7 @@ class GlassBottomNav extends StatelessWidget {
             sigma: context.glassConfig.dockBlurSigma,
             enableBlur: context.glassConfig.backdropBlurDock,
             border: Border.all(
-              color: isLight
-                  ? Colors.white.withValues(alpha: 0.55)
-                  : colors.glassBorder,
+              color: colors.borderLight,
               width: 1,
             ),
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
@@ -835,7 +833,7 @@ class GlassBottomNav extends StatelessWidget {
                             decoration: BoxDecoration(
                               color: isLight
                                   ? colors.card
-                                  : colors.surfaceMuted.withValues(alpha: 0.72),
+                                  : colors.surfaceMuted,
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
                                 color: isLight

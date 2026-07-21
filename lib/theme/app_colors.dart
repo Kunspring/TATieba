@@ -28,9 +28,9 @@ class AppColors {
   static const error = Color(0xFFD32F2F);
   static const success = Color(0xFF388E3C);
 
-  static const glassFill = Color(0x99FFFFFF);
-  static const glassFillStrong = Color(0xBFFFFFFF);
-  static const glassBorder = Color(0x38000000);
+  static const glassFill = Color(0xFFFFFFFF);
+  static const glassFillStrong = Color(0xFFFFFFFF);
+  static const glassBorder = Color(0xFFEEEEEE);
   static const glassHighlight = Color(0x80FFFFFF);
 
   static const darkPrimary = Color(0xFFFFFFFF);
@@ -51,9 +51,9 @@ class AppColors {
   static const darkNavUnselected = Color(0xFF888888);
   static const darkAccent = Color(0xFFFFFFFF);
   static const darkSearchBg = Color(0xFF0A0A0A);
-  static const darkGlassFill = Color(0x66141414);
-  static const darkGlassFillStrong = Color(0x99141414);
-  static const darkGlassBorder = Color(0x45FFFFFF);
+  static const darkGlassFill = Color(0xFF1E1E1E);
+  static const darkGlassFillStrong = Color(0xFF1E1E1E);
+  static const darkGlassBorder = Color(0xFF444444);
   static const darkGlassHighlight = Color(0x18FFFFFF);
 }
 

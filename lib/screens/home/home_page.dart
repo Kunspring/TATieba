@@ -25,6 +25,7 @@ import '../../widgets/app_empty_state.dart';
 import '../../widgets/app_loading.dart';
 import '../../widgets/bar_forum_header.dart';
 import '../../widgets/kaomoji_loader.dart';
+import '../../widgets/app_skeleton.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/agent_companion/agent_companion_controller.dart';
 import '../../widgets/post_card.dart';
@@ -754,7 +755,7 @@ class _HomePageState extends State<HomePage>
     return LoadingFadeView(
       loading: _loading && _posts.isEmpty,
       blockInteraction: false,
-      loadingWidget: const Center(child: KaomojiLoader(size: 40)),
+      loadingWidget: const FeedSkeleton(),
       child: _buildLoadedBody(colors),
     );
   }

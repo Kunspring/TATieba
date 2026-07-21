@@ -25,6 +25,7 @@ import '../../widgets/app_toast.dart';
 import '../../widgets/kaomoji_loader.dart';
 import '../../widgets/user_avatar.dart';
 import '../../widgets/user_level_badges.dart';
+import '../../widgets/app_skeleton.dart';
 import '../detail/post_detail_page.dart';
 import '../home/forum_post_card.dart';
 import '../messages/private_chat_detail_page.dart';
@@ -734,7 +735,7 @@ class _ProfileHeaderPreview extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const SizedBox(height: 6),
-                            _SkeletonLine(width: 88, colors: colors),
+                            SkeletonLine(width: 88, colors: colors),
                           ],
                         ),
                       ),
@@ -763,7 +764,7 @@ class _ProfileHeaderPreview extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 8),
-                  _SkeletonLine(
+                  SkeletonLine(
                     width: double.infinity,
                     colors: colors,
                     height: 10,
@@ -790,30 +791,6 @@ class _ProfileHeaderPreview extends StatelessWidget {
   }
 }
 
-class _SkeletonLine extends StatelessWidget {
-  final double width;
-  final double height;
-  final AppColorScheme colors;
-
-  const _SkeletonLine({
-    required this.width,
-    required this.colors,
-    this.height = 12,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        color: colors.surfaceMuted,
-        borderRadius: BorderRadius.circular(6),
-      ),
-    );
-  }
-}
-
 class _SkeletonStatCell extends StatelessWidget {
   final AppColorScheme colors;
 
@@ -824,9 +801,9 @@ class _SkeletonStatCell extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          _SkeletonLine(width: 36, colors: colors, height: 14),
+          SkeletonLine(width: 36, colors: colors, height: 14),
           const SizedBox(height: 6),
-          _SkeletonLine(width: 28, colors: colors, height: 10),
+          SkeletonLine(width: 28, colors: colors, height: 10),
         ],
       ),
     );
@@ -1448,7 +1425,7 @@ class _UserPostListTabState extends State<_UserPostListTab>
               delegate: SliverChildBuilderDelegate(
                 (_, i) => Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: _PostCardSkeleton(colors: context.appColors),
+                  child: PostCardSkeleton(colors: context.appColors),
                 ),
                 childCount: 3,
               ),
@@ -1711,7 +1688,7 @@ class _UserForumListTabState extends State<_UserForumListTab>
               delegate: SliverChildBuilderDelegate(
                 (_, i) => Padding(
                   padding: const EdgeInsets.only(bottom: 10),
-                  child: _ForumRowSkeleton(colors: colors),
+                  child: ForumRowSkeleton(colors: colors),
                 ),
                 childCount: 6,
               ),
@@ -1848,55 +1825,5 @@ class _UserForumRow extends StatelessWidget {
   }
 }
 
-class _ForumRowSkeleton extends StatelessWidget {
-  final AppColorScheme colors;
-
-  const _ForumRowSkeleton({required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      decoration: BoxDecoration(
-        color: colors.surfaceMuted.withValues(alpha: 0.55),
-        borderRadius: AppDecorations.borderRadiusMd,
-      ),
-    );
-  }
-}
-
-class _PostCardSkeleton extends StatelessWidget {
-  final AppColorScheme colors;
-
-  const _PostCardSkeleton({required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: colors.surfaceMuted,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 10),
-              _SkeletonLine(width: 88, colors: colors, height: 10),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _SkeletonLine(width: double.infinity, colors: colors, height: 12),
-          const SizedBox(height: 8),
-          _SkeletonLine(width: 220, colors: colors, height: 10),
-        ],
-      ),
-    );
-  }
-}
+// 骨架组件已提取至 lib/widgets/app_skeleton.dart
+// （SkeletonLine / PostCardSkeleton / ForumRowSkeleton / CommentSkeleton / FeedSkeleton）。

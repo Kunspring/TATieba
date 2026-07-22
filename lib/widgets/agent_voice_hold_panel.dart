@@ -940,7 +940,7 @@ class AgentVoiceHoldDetector extends StatefulWidget {
 }
 
 class _AgentVoiceHoldDetectorState extends State<AgentVoiceHoldDetector> {
-  static const _cancelDragSlop = 48.0;
+  static const _cancelDragSlop = 72.0;
   static const _longPressDelay = VoiceComposerMotion.longPressDelay;
   static const _longPressSlop = 18.0;
 
@@ -1044,7 +1044,9 @@ class _AgentVoiceHoldDetectorState extends State<AgentVoiceHoldDetector> {
   }
 
   void _updateCancelArmed() {
-    if (_downGlobal == null || _lastMoveDy == null || !_voiceHoldTracking) {
+    // 仅在录音真正开始后（widget.listening）才允许“上滑取消”生效，
+    // 避免连接建立延迟期内手指轻微上移就误触取消，导致松手后什么都不发。
+    if (_downGlobal == null || _lastMoveDy == null || !widget.listening) {
       return;
     }
     // 全局坐标差值判定：手指相对按下点向上移动超过阈值即进入“上滑取消”。

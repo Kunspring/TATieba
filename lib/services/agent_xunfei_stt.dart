@@ -233,8 +233,9 @@ class AgentXunfeiStt {
     _audioBuffer.clear();
     _firstFrameSent = false;
     _endSent = false;
-    _serverEnded = false;
-    _finalDelivered = false;
+    // 注意：_serverEnded / _finalDelivered 不在结束处重置——它们在 start() 开头
+    // 已被清空。若在此重置，手动松手与 status==2 自然结束并发跑两个 _finish 时，
+    // 后结束的一方会把守卫复位，导致单次交付守卫失效、结果被重复/错位回调。
   }
 
   /// 最终结果只交付一次，避免 _onWsMessage 的 status==2 与 _finish 重复回调。

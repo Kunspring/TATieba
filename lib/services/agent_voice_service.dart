@@ -134,8 +134,11 @@ class AgentVoiceService {
   }
 
   Future<void> stopListening() async {
-    if (!_stt.isListening) return;
-    await _stt.stop();
+    // 即使后端已自然结束（_stt.isListening 为 false），也要回写最终识别文本，
+    // 否则在「说完后静音自动结束」场景下松手会丢失结果、什么都不发。
+    if (_stt.isListening) {
+      await _stt.stop();
+    }
     _lastRecognizedText = _stt.lastText;
     _resetWaveform();
   }

@@ -1,5 +1,4 @@
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -14,20 +13,31 @@ class KaomojiLoader extends StatefulWidget {
 }
 
 class _KaomojiLoaderState extends State<KaomojiLoader>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 1500),
     )..repeat();
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _ctrl.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      _ctrl.repeat();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _ctrl.dispose();
     super.dispose();
   }
@@ -39,16 +49,11 @@ class _KaomojiLoaderState extends State<KaomojiLoader>
       child: AnimatedBuilder(
         animation: _ctrl,
         builder: (context, _) {
-          final t = _ctrl.value;
-          final scale = 0.985 + 0.045 * math.sin(t * math.pi * 2);
-          return Transform.scale(
-            scale: scale,
-            child: CustomPaint(
-              size: Size(widget.size, widget.size),
-              isComplex: true,
-              willChange: true,
-              painter: _KaomojiPainter(progress: t, color: color),
-            ),
+          return CustomPaint(
+            size: Size(widget.size, widget.size),
+            isComplex: true,
+            willChange: true,
+            painter: _KaomojiPainter(progress: _ctrl.value, color: color),
           );
         },
       ),
@@ -62,102 +67,102 @@ class _KaomojiPainter extends CustomPainter {
   final double progress;
   final Color color;
 
-  static final Path _leftEyePath = Path()
-    ..moveTo(14, 26)
-    ..lineTo(34, 40)
-    ..lineTo(14, 54);
-
-  static final Path _rightEyePath = Path()
-    ..moveTo(86, 26)
-    ..lineTo(66, 40)
-    ..lineTo(86, 54);
-
-  static final Path _mouthPath = Path()
-    ..moveTo(38, 64)
-    ..lineTo(62, 64);
-
-  static ui.PathMetric? _leftMetric;
-  static ui.PathMetric? _rightMetric;
-  static double? _leftLen;
-  static double? _rightLen;
-
-  static void _ensureMetrics() {
-    if (_leftMetric != null) return;
-    _leftMetric = _leftEyePath.computeMetrics().first;
-    _rightMetric = _rightEyePath.computeMetrics().first;
-    _leftLen = _leftMetric!.length;
-    _rightLen = _rightMetric!.length;
-  }
+  static const _eyeTopY = 34.0;
+  static const _eyeMidY = 46.0;
+  static const _eyeBotY = 58.0;
+  static const _eyeOuterX = 18.0;
+  static const _eyeInnerX = 38.0;
+  static const _mouthY = 68.0;
+  static const _mouthHalf = 14.0;
+  static const _dotBaseY = 82.0;
+  static const _dotMaxRise = 9.0;
+  static const _dotRadius = 3.5;
+  static const _dotSpacing = 12.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    _ensureMetrics();
-
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.5
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final guidePaint = Paint.from(paint)..color = color.withValues(alpha: 0.1);
-
     final scale = size.width / 100;
     canvas.save();
     canvas.scale(scale, scale);
 
-    final mouthPaint = Paint.from(paint)
-      ..color = color.withValues(
-        alpha: 0.35 + 0.15 * (math.sin(progress * math.pi * 2) * 0.5 + 0.5),
-      )
-      ..strokeWidth = 3.5;
-    canvas.drawPath(_mouthPath, mouthPaint);
+    final t = progress;
 
-    _drawSwept(
-      canvas,
-      _leftEyePath,
-      _leftMetric!,
-      _leftLen!,
-      progress,
-      paint,
-      guidePaint,
+    // --- face breathing scale ---
+    final breathe = 1.0 + math.sin(t * 2 * math.pi) * 0.015;
+    canvas.save();
+    canvas.translate(50, 50);
+    canvas.scale(breathe);
+    canvas.translate(-50, -50);
+
+    // --- eye squint: quick blink twice per cycle ---
+    final squintRaw = math.sin(t * 2 * math.pi * 2);
+    final squint = math.pow(squintRaw.clamp(0.0, 1.0), 3).toDouble();
+    // Left eye '>'
+    final lInnerX = _eyeInnerX - squint * 6;
+    final leftEye = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final leftPath = Path()
+      ..moveTo(_eyeOuterX, _eyeTopY)
+      ..lineTo(lInnerX, _eyeMidY)
+      ..lineTo(_eyeOuterX, _eyeBotY);
+    canvas.drawPath(leftPath, leftEye);
+
+    // Right eye '<'
+    final rInnerX = 100 - _eyeInnerX + squint * 6;
+    final rightEye = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final rightPath = Path()
+      ..moveTo(100 - _eyeOuterX, _eyeTopY)
+      ..lineTo(rInnerX, _eyeMidY)
+      ..lineTo(100 - _eyeOuterX, _eyeBotY);
+    canvas.drawPath(rightPath, rightEye);
+
+    // --- mouth: subtle wobble ---
+    final mouthWobble = math.sin(t * 2 * math.pi + 1.2) * 1.2;
+    final mouthPaint = Paint()
+      ..color = color.withValues(alpha: 0.5 + squint * 0.15)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+      Offset(50 - _mouthHalf, _mouthY + mouthWobble),
+      Offset(50 + _mouthHalf, _mouthY + mouthWobble),
+      mouthPaint,
     );
-    _drawSwept(
-      canvas,
-      _rightEyePath,
-      _rightMetric!,
-      _rightLen!,
-      progress,
-      paint,
-      guidePaint,
-    );
 
-    canvas.restore();
-  }
+    canvas.restore(); // breathe scale
 
-  void _drawSwept(
-    Canvas canvas,
-    Path guidePath,
-    ui.PathMetric metric,
-    double len,
-    double t,
-    Paint paint,
-    Paint guide,
-  ) {
-    canvas.drawPath(guidePath, guide);
+    // --- bouncing dots ---
+    final centerX = 50.0;
+    for (var i = 0; i < 3; i++) {
+      final phase = i * 0.22;
+      final dotCycle = (t + phase) % 1.0;
+      // parabolic bounce: 0 → peak at 0.5 → back to 0
+      final rise = math.sin(dotCycle * math.pi);
+      final dotY = _dotBaseY - rise * _dotMaxRise;
+      // dot expands slightly at peak
+      final dotScale = 0.7 + rise * 0.3;
+      final dotAlpha = 0.35 + rise * 0.65;
 
-    final window = len * 0.38;
-    // 单程 len + window：t=0 与 t=1 高亮均在路径外，循环首尾一致，避免开放路径回绕跳变。
-    final travel = len + window;
-    final phase = t * travel;
-    final segStart = phase - window;
-    final segEnd = phase;
+      final dotPaint = Paint()
+        ..color = color.withValues(alpha: dotAlpha)
+        ..style = PaintingStyle.fill;
+      canvas.drawCircle(
+        Offset(centerX + (i - 1) * _dotSpacing, dotY),
+        _dotRadius * dotScale,
+        dotPaint,
+      );
+    }
 
-    final drawStart = segStart.clamp(0.0, len);
-    final drawEnd = segEnd.clamp(0.0, len);
-    if (drawEnd <= drawStart) return;
-
-    canvas.drawPath(metric.extractPath(drawStart, drawEnd), paint);
+    canvas.restore(); // full scale
   }
 
   @override

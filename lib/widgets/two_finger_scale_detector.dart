@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
 /// 仅双指捏合时触发缩放，单指拖动不参与手势竞技场，避免与滚动/翻页冲突。
+///
+/// [scaleNotifier] 是可选的替代方案：提供后内部直接在捏合开始时读取最新值，
+/// 父级无需通过 [ValueListenableBuilder] 包裹整个子树来传递 [scale]，
+/// 从而避免不必要的全树重建。
 class TwoFingerScaleDetector extends StatefulWidget {
   final Widget child;
   final double scale;
+  final ValueNotifier<double>? scaleNotifier;
   final ValueChanged<double> onScaleChanged;
   final double minScale;
   final double maxScale;
@@ -11,7 +16,8 @@ class TwoFingerScaleDetector extends StatefulWidget {
   const TwoFingerScaleDetector({
     super.key,
     required this.child,
-    required this.scale,
+    this.scale = 1.0,
+    this.scaleNotifier,
     required this.onScaleChanged,
     this.minScale = 0.8,
     this.maxScale = 2.5,
@@ -39,7 +45,7 @@ class _TwoFingerScaleDetectorState extends State<TwoFingerScaleDetector> {
 
   void _beginPinch() {
     _initialDistance = _currentDistance;
-    _baseScale = widget.scale;
+    _baseScale = widget.scaleNotifier?.value ?? widget.scale;
   }
 
   void _resetPinch() {

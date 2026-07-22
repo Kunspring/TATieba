@@ -33,6 +33,17 @@ class BrowseDistillService {
   bool get enabled => _enabled;
   bool get llmPolishEnabled => _llmPolish;
 
+  /// 浏览历史中各吧的总停留时长（ms），用于推荐排序的兴趣权重。
+  Future<Map<String, int>> getForumAffinity() async {
+    await _ensureLoaded();
+    final map = <String, int>{};
+    for (final entry in _entries) {
+      if (entry.barName.isEmpty) continue;
+      map[entry.barName] = (map[entry.barName] ?? 0) + entry.dwellMs;
+    }
+    return map;
+  }
+
   Future<void> loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
     _enabled = prefs.getBool(_enabledKey) ?? true;

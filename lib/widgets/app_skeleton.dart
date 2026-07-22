@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
 import '../theme/app_decorations.dart';
+import '../theme/app_fonts.dart';
 import '../theme/app_glass.dart';
 import 'kaomoji_loader.dart';
 
@@ -122,6 +123,98 @@ class CommentSkeleton extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 帖子详情页加载骨架：帖子卡 + 评论列表。
+class PostDetailSkeleton extends StatelessWidget {
+  final AppColorScheme colors;
+
+  const PostDetailSkeleton({super.key, required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = AppDecorations.borderRadiusXl;
+    return CustomScrollView(
+      physics: const NeverScrollableScrollPhysics(),
+      slivers: [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: colors.card,
+                borderRadius: radius,
+                border: Border.all(color: colors.borderLight, width: 0.5),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: colors.surfaceMuted,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SkeletonLine(width: 100, colors: colors, height: 12),
+                            const SizedBox(height: 6),
+                            SkeletonLine(width: 60, colors: colors, height: 10),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    SkeletonLine(
+                      width: double.infinity,
+                      colors: colors,
+                      height: 16,
+                    ),
+                    const SizedBox(height: 12),
+                    SkeletonLine(
+                      width: double.infinity,
+                      colors: colors,
+                      height: 12,
+                    ),
+                    const SizedBox(height: 8),
+                    SkeletonLine(width: 240, colors: colors, height: 12),
+                    const SizedBox(height: 8),
+                    SkeletonLine(width: 180, colors: colors, height: 12),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+            child: Text(
+              '评论',
+              style: AppFonts.caption(color: colors.textSecondary),
+            ),
+          ),
+        ),
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (_, _) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: CommentSkeleton(colors: colors),
+            ),
+            childCount: 5,
+          ),
+        ),
+      ],
     );
   }
 }

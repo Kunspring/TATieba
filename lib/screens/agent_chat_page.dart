@@ -17,7 +17,6 @@ import '../theme/app_fonts.dart';
 import '../services/agent_persona.dart';
 import '../theme/app_icons.dart';
 import '../theme/app_glass.dart';
-import '../theme/app_glass_config.dart';
 import '../utils/app_lifecycle_gate.dart';
 import '../utils/agent_attachment_reader.dart';
 import '../utils/local_file_bytes.dart';
@@ -1012,7 +1011,7 @@ class _AgentChatPageState extends State<AgentChatPage>
                 : ListView.builder(
                     reverse: true,
                     controller: _scrollCtrl,
-                    cacheExtent: 500,
+                    cacheExtent: 0,
                     keyboardDismissBehavior:
                         ScrollViewKeyboardDismissBehavior.onDrag,
                     padding: EdgeInsets.fromLTRB(
@@ -1625,12 +1624,12 @@ class _ThinkingElapsedSummary extends StatefulWidget {
       _ThinkingElapsedSummaryState();
 }
 
-class _ThinkingElapsedSummaryState extends State<_ThinkingElapsedSummary> {
+class _ThinkingElapsedSummaryState extends State<_ThinkingElapsedSummary>
+    with WidgetsBindingObserver {
   Timer? _timer;
 
-  @override
-  void initState() {
-    super.initState();
+  void _startTimer() {
+    _timer?.cancel();
     if (AppLifecycleGate.effectsEnabled) {
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (mounted) setState(() {});
@@ -1639,7 +1638,25 @@ class _ThinkingElapsedSummaryState extends State<_ThinkingElapsedSummary> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _startTimer();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _timer?.cancel();
+      _timer = null;
+    } else if (state == AppLifecycleState.resumed) {
+      _startTimer();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }
@@ -1994,7 +2011,6 @@ class _KeyboardComposerState extends State<_KeyboardComposer> {
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    final config = context.glassConfig;
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final voiceActive = _voiceUiActive || _voiceArming || widget.voiceListening;
 
@@ -2007,8 +2023,6 @@ class _KeyboardComposerState extends State<_KeyboardComposer> {
           colors: colors,
           borderRadius: BorderRadius.circular(28),
           strong: true,
-          sigma: config.dockBlurSigma,
-          enableBlur: config.backdropBlurDock,
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: _Composer(
             controller: widget.controller,
@@ -2474,8 +2488,6 @@ class _ComposerIconButton extends StatelessWidget {
           child: InkWell(
             onTap: null,
             customBorder: const CircleBorder(),
-            splashColor: fg.withValues(alpha: 0.12),
-            highlightColor: fg.withValues(alpha: 0.08),
             child: SizedBox(
               width: size,
               height: size,

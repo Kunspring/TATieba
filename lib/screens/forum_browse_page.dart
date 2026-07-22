@@ -383,7 +383,7 @@ class _ForumBrowsePageState extends State<ForumBrowsePage>
           CustomScrollView(
             controller: _scrollCtrl,
             physics: _scrollPhysics,
-            cacheExtent: 500,
+            cacheExtent: 0,
             slivers: [
               CupertinoSliverRefreshControl(
                 onRefresh: _refreshData,

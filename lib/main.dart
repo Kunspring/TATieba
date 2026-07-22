@@ -295,6 +295,9 @@ class _TiebaAppState extends State<TiebaApp> with WidgetsBindingObserver {
       useMaterial3: true,
       brightness: brightness,
       scaffoldBackgroundColor: appColorScheme.scaffold,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      splashFactory: NoSplash.splashFactory,
       extensions: [appColorScheme],
       colorScheme: ColorScheme(
         brightness: brightness,

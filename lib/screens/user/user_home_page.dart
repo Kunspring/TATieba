@@ -1459,7 +1459,7 @@ class _UserPostListTabState extends State<_UserPostListTab>
       child: CustomScrollView(
         key: PageStorageKey('user-home-posts-${widget.threadsOnly}'),
         physics: _scrollPhysics,
-        cacheExtent: 500,
+        cacheExtent: 0,
         slivers: [
           SliverOverlapInjector(handle: overlapHandle),
           SliverPadding(
@@ -1724,7 +1724,7 @@ class _UserForumListTabState extends State<_UserForumListTab>
       child: CustomScrollView(
         key: const PageStorageKey('user-home-forums'),
         physics: _scrollPhysics,
-        cacheExtent: 500,
+        cacheExtent: 0,
         slivers: [
           SliverOverlapInjector(handle: overlapHandle),
           SliverPadding(

@@ -909,7 +909,7 @@ class _HomePageState extends State<HomePage>
 
     return CustomScrollView(
       controller: _scrollController,
-      cacheExtent: 500,
+      cacheExtent: 0,
       physics: _scrollPhysics,
       slivers: [
         CupertinoSliverRefreshControl(

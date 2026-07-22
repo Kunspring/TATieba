@@ -58,8 +58,6 @@ class PostCard extends StatelessWidget {
             child: InkWell(
               onTap: onTap,
               borderRadius: radius,
-              splashColor: colors.primary.withValues(alpha: 0.05),
-              highlightColor: colors.primary.withValues(alpha: 0.02),
               child: Padding(
                 padding: const EdgeInsets.all(18),
                 child: Column(
@@ -140,34 +138,44 @@ class PostCard extends StatelessWidget {
                       const SizedBox(height: 14),
                       ClipRRect(
                         borderRadius: AppDecorations.borderRadiusMd,
-                        child: AspectRatio(
-                          aspectRatio: post.video != null
-                              ? post.video!.aspectRatio
-                              : CoverImageCache.listCoverAspectRatio,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              CachedNetworkImage(
+                        child: post.video != null
+                            ? AspectRatio(
+                                aspectRatio: post.video!.aspectRatio,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    CachedNetworkImage(
+                                      imageUrl: post.cover!,
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                      memCacheWidth: coverCacheWidth,
+                                      maxWidthDiskCache: coverCacheWidth,
+                                      fadeInDuration: Duration.zero,
+                                      errorWidget: (_, _, _) => Container(
+                                        color: Colors.grey.withValues(alpha: 0.2),
+                                      ),
+                                    ),
+                                    VideoPlayOverlay(
+                                      duration: post.video!.duration > 0
+                                          ? post.video!.duration
+                                          : null,
+                                      playSize: 44,
+                                    ),
+                                  ],
+                                ),
+                              )
+                            : CachedNetworkImage(
                                 imageUrl: post.cover!,
-                                fit: BoxFit.cover,
+                                fit: BoxFit.fitWidth,
                                 width: double.infinity,
                                 memCacheWidth: coverCacheWidth,
                                 maxWidthDiskCache: coverCacheWidth,
                                 fadeInDuration: Duration.zero,
                                 errorWidget: (_, _, _) => Container(
                                   color: Colors.grey.withValues(alpha: 0.2),
+                                  height: 200,
                                 ),
                               ),
-                              if (post.video != null)
-                                VideoPlayOverlay(
-                                  duration: post.video!.duration > 0
-                                      ? post.video!.duration
-                                      : null,
-                                  playSize: 44,
-                                ),
-                            ],
-                          ),
-                        ),
                       ),
                     ],
                     const SizedBox(height: 14),

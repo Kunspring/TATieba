@@ -5,9 +5,6 @@ import '../services/data_saver_service.dart';
 abstract final class CoverImageCache {
   CoverImageCache._();
 
-  /// 列表封面展示比例（宽 : 高），超出部分由 [BoxFit.cover] 裁切。
-  static const double listCoverAspectRatio = 16 / 9;
-
   static int memCacheWidth(BuildContext context, {bool dataSaver = false}) {
     final width = MediaQuery.sizeOf(context).width;
     final dpr = MediaQuery.devicePixelRatioOf(context);

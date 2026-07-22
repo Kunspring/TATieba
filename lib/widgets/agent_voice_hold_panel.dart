@@ -314,7 +314,7 @@ class _DriftShard {
 }
 
 class _DriftingVoiceTranscriptState extends State<DriftingVoiceTranscript>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _tick;
 
   String _lastCommitted = '';
@@ -326,6 +326,8 @@ class _DriftingVoiceTranscriptState extends State<DriftingVoiceTranscript>
   @override
   void initState() {
     super.initState();
+
+    WidgetsBinding.instance.addObserver(this);
 
     _lastCommitted = widget.text.trim();
 
@@ -340,6 +342,16 @@ class _DriftingVoiceTranscriptState extends State<DriftingVoiceTranscript>
     }
 
     _tick.addListener(_onTick);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _tick.stop();
+    } else if (state == AppLifecycleState.resumed &&
+        AppLifecycleGate.effectsEnabled) {
+      _tick.repeat();
+    }
   }
 
   @override
@@ -405,6 +417,7 @@ class _DriftingVoiceTranscriptState extends State<DriftingVoiceTranscript>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tick.removeListener(_onTick);
 
     _tick.dispose();

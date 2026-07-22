@@ -1,10 +1,14 @@
 import 'dart:async';
 
+import 'dart:math' as math;
+
 import '../models/tieba_post.dart';
 import 'tieba_account_service.dart';
 import 'tieba_client.dart';
 import 'tieba_favorite_service.dart';
 import 'data_saver_service.dart';
+import 'forum_recent_service.dart';
+import 'browse_distill_service.dart';
 
 class TiebaCrawlerService {
   static final Set<String> _sessionIds = {};
@@ -84,11 +88,13 @@ class TiebaCrawlerService {
         continue;
       }
 
-      final newPosts = feed.posts
+      var newPosts = feed.posts
           .where((p) => _rememberSessionId(p.id))
           .toList();
 
       if (newPosts.isNotEmpty) {
+        newPosts = await _rankAndDrop(newPosts);
+        if (newPosts.isEmpty) continue;
         unawaited(_syncFavoriteStatus(newPosts));
         unawaited(_enrichForumLevels(newPosts, bduss));
         return newPosts;
@@ -206,5 +212,119 @@ class TiebaCrawlerService {
       final dropped = _sessionIdOrder.removeAt(0);
       _sessionIds.remove(dropped);
     }
+  }
+
+  // -- client-side re-ranking --
+
+  /// 三维度打分：相关性、质量、时效，按权重合成。
+  static double _scorePost(
+    TiebaPost post, {
+    required Map<String, double> forumAffinity,
+    required Set<String> recentForums,
+    required double maxAffinity,
+  }) {
+    // ---- 相关性 0..1 ----
+    double relevance = 0.0;
+    final affinity = forumAffinity[post.barName] ?? 0.0;
+    if (maxAffinity > 0) {
+      relevance += (affinity / maxAffinity) * 0.7;
+    }
+    // 最近访问的吧也有信号（即使没有浏览时长）
+    if (recentForums.contains(post.barName)) {
+      relevance += 0.3;
+    }
+    relevance = relevance.clamp(0.0, 1.0);
+
+    // ---- 质量 0..1 ----
+    double quality = 0.3; // 底线分
+    if (post.replyCount >= 100) {
+      quality += 0.3;
+    } else if (post.replyCount >= 20) {
+      quality += 0.2;
+    } else if (post.replyCount >= 5) {
+      quality += 0.1;
+    }
+    if (post.likes >= 50) {
+      quality += 0.15;
+    } else if (post.likes >= 10) {
+      quality += 0.08;
+    }
+    if (post.contentPreview.length >= 30) {
+      quality += 0.1;
+    }
+    if (post.cover != null && post.cover!.isNotEmpty) {
+      quality += 0.05;
+    }
+    if (post.video != null) {
+      quality += 0.08;
+    }
+    quality = quality.clamp(0.0, 1.0);
+
+    // ---- 时效 0..1 ----
+    double recency = 0.5;
+    final hours = DateTime.now().difference(post.createdAt).inHours;
+    if (hours < 3) {
+      recency += 0.3;
+    } else if (hours < 12) {
+      recency += 0.2;
+    } else if (hours < 24) {
+      recency += 0.1;
+    } else if (hours > 168) {
+      recency -= 0.15;
+    }
+    recency = recency.clamp(0.0, 1.0);
+
+    return relevance * 0.5 + quality * 0.3 + recency * 0.2;
+  }
+
+  static Future<List<TiebaPost>> _rankAndDrop(List<TiebaPost> posts) async {
+    if (posts.length <= 5) return posts;
+
+    // 聚合用户兴趣信号
+    final affinity = await BrowseDistillService.instance.getForumAffinity();
+    final maxAffinity = affinity.values.isEmpty
+        ? 1.0
+        : affinity.values.map((v) => v.toDouble()).reduce(math.max);
+    final forumAffinity = affinity.map((k, v) => MapEntry(k, v.toDouble()));
+
+    final recent = await ForumRecentService.getRecent();
+    final recentSet = recent.toSet();
+
+    // 打分
+    final scored = <({TiebaPost post, double score})>[];
+    for (final post in posts) {
+      scored.add((
+        post: post,
+        score: _scorePost(
+          post,
+          forumAffinity: forumAffinity,
+          recentForums: recentSet,
+          maxAffinity: maxAffinity,
+        ),
+      ));
+    }
+
+    // 多样性惩罚：同一吧后续帖逐步降权
+    final forumCount = <String, int>{};
+    for (var i = 0; i < scored.length; i++) {
+      final item = scored[i];
+      final f = item.post.barName;
+      final seen = forumCount[f] ?? 0;
+      if (seen > 0) {
+        final penalty = (seen * 0.06).clamp(0.0, 0.18);
+        scored[i] = (post: item.post, score: item.score - penalty);
+      }
+      forumCount[f] = seen + 1;
+    }
+
+    // 重排
+    scored.sort((a, b) => b.score.compareTo(a.score));
+
+    // 去掉尾部低分帖（底 25%，但至少保留 60%）
+    final cutIndex = (posts.length * 0.75).ceil();
+    final minKeep = (posts.length * 0.6).ceil();
+    final keepCount = math.max(cutIndex, minKeep);
+
+    return scored.take(keepCount).map((s) => s.post).toList();
   }
 }

@@ -4,8 +4,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 
-import '../theme/app_fonts.dart';
-import '../theme/app_glass.dart';
 import 'app_toast.dart';
 import 'kaomoji_loader.dart';
 
@@ -32,7 +30,14 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   TapDownDetails? _doubleTapDown;
 
   @override
+  void initState() {
+    super.initState();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  }
+
+  @override
   void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _zoomAnimationController?.dispose();
     _transformController.dispose();
     super.dispose();
@@ -142,65 +147,72 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
   @override
   Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
+    return Scaffold(
         backgroundColor: Colors.black,
-        appBar: GlassAppBar(
-          companionLayoutKey: 'image-viewer',
-          titleText: '查看图片',
-          companionColor: Colors.white,
-          fillColor: Colors.black.withValues(alpha: 0.72),
-          title: Text('查看图片', style: AppFonts.title(color: Colors.white)),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-          actions: [
-            IconButton(
-              icon: _downloading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(
-                      Icons.file_download_rounded,
-                      color: Colors.white,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 图片主体
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final width = constraints.maxWidth;
+                final height = constraints.maxHeight;
+                return InteractiveViewer(
+                  transformationController: _transformController,
+                  panEnabled: true,
+                  scaleEnabled: true,
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  boundaryMargin: const EdgeInsets.all(120),
+                  clipBehavior: Clip.none,
+                  child: GestureDetector(
+                    onDoubleTapDown: _onDoubleTapDown,
+                    onDoubleTap: _onDoubleTap,
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox(
+                      width: width,
+                      height: height,
+                      child: _buildImage(width, height),
                     ),
-              onPressed: _downloading ? null : _download,
+                  ),
+                );
+              },
+            ),
+            // 顶部：返回 + 下载按钮（半透明悬浮）
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded,
+                          color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: _downloading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.file_download_rounded,
+                              color: Colors.white),
+                      onPressed: _downloading ? null : _download,
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final width = constraints.maxWidth;
-            final height = constraints.maxHeight;
-            return InteractiveViewer(
-              transformationController: _transformController,
-              panEnabled: true,
-              scaleEnabled: true,
-              minScale: 1.0,
-              maxScale: 4.0,
-              boundaryMargin: const EdgeInsets.all(120),
-              clipBehavior: Clip.none,
-              child: GestureDetector(
-                onDoubleTapDown: _onDoubleTapDown,
-                onDoubleTap: _onDoubleTap,
-                behavior: HitTestBehavior.opaque,
-                child: SizedBox(
-                  width: width,
-                  height: height,
-                  child: _buildImage(width, height),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
     );
   }
 }

@@ -235,7 +235,7 @@ class MessagesPageState extends State<MessagesPage>
             physics: const AlwaysScrollableScrollPhysics(
               parent: ClampingScrollPhysics(),
             ),
-            cacheExtent: 500,
+            cacheExtent: 0,
             slivers: [
               SliverToBoxAdapter(
                 child: _NotificationPanel(

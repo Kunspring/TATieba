@@ -1,5 +1,3 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'app_colors.dart';
@@ -10,84 +8,36 @@ import '../utils/app_lifecycle_gate.dart';
 import '../widgets/agent_companion/agent_companion_layer.dart';
 import 'glass_app_bar_layout.dart';
 
-const _blurFilterCacheMaxEntries = 12;
-final _blurFilterCache = <String, ui.ImageFilter>{};
-final _blurFilterCacheOrder = <String>[];
-
-ui.ImageFilter _blurFilterFor(double sigma) {
-  final key = sigma.toStringAsFixed(2);
-  final cached = _blurFilterCache[key];
-  if (cached != null) {
-    _blurFilterCacheOrder
-      ..remove(key)
-      ..add(key);
-    return cached;
-  }
-  final blur = ui.ImageFilter.blur(
-    sigmaX: sigma,
-    sigmaY: sigma,
-    tileMode: ui.TileMode.clamp,
-  );
-  if (_blurFilterCacheOrder.length >= _blurFilterCacheMaxEntries) {
-    final oldest = _blurFilterCacheOrder.removeAt(0);
-    _blurFilterCache.remove(oldest);
-  }
-  _blurFilterCache[key] = blur;
-  _blurFilterCacheOrder.add(key);
-  return blur;
-}
-
-/// 毛玻璃面板：仅 BackdropFilter 模糊 + 半透明染色。朴素实现，
-/// 不做额外色彩/颗粒/高光处理，以控制 GPU 开销。
-class _GlassFrosting extends StatelessWidget {
-  final AppColorScheme colors;
-  final BorderRadiusGeometry? radius;
-  final double sigma;
+/// 实色面板：不再使用 BackdropFilter，零 GPU 模糊开销。
+class _SolidPanel extends StatelessWidget {
   final Color fill;
   final Border border;
+  final BorderRadiusGeometry? radius;
   final EdgeInsetsGeometry? padding;
   final Widget child;
+  final List<BoxShadow>? boxShadow;
 
-  const _GlassFrosting({
-    required this.colors,
-    required this.radius,
-    required this.sigma,
+  const _SolidPanel({
     required this.fill,
     required this.border,
+    required this.radius,
     this.padding,
     required this.child,
+    this.boxShadow,
   });
 
   @override
   Widget build(BuildContext context) {
-    final blurOn = sigma > 0;
-    final filter = blurOn ? _blurFilterFor(sigma) : null;
-
-    final stack = Stack(
-      fit: StackFit.passthrough,
-      children: [
-        if (blurOn)
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: BackdropFilter(
-                filter: filter!,
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ),
-        Positioned.fill(
-          child: DecoratedBox(decoration: BoxDecoration(color: fill)),
-        ),
-        if (padding != null)
-          Padding(padding: padding!, child: child)
-        else
-          child,
-      ],
-    );
-
     return DecoratedBox(
-      decoration: BoxDecoration(borderRadius: radius, border: border),
-      child: ClipRRect(borderRadius: radius ?? BorderRadius.zero, child: stack),
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        border: border,
+        color: fill,
+        boxShadow: boxShadow,
+      ),
+      child: padding != null
+          ? Padding(padding: padding!, child: child)
+          : child,
     );
   }
 }
@@ -97,35 +47,23 @@ Widget glassSurface({
   required Widget child,
   BorderRadiusGeometry borderRadius = BorderRadius.zero,
   bool strong = false,
-  double? sigma,
   Border? border,
   EdgeInsetsGeometry? padding,
-  bool? enableBlur,
   Color? fillOverride,
+  List<BoxShadow>? boxShadow,
 }) {
   final config = AppGlassConfig.current;
-  final radius = borderRadius;
-  final shouldBlur = enableBlur ?? config.backdropBlurPanels;
-  final blurSigma =
-      sigma ??
-      (strong ? config.backdropBlurSigmaStrong : config.backdropBlurSigma);
   final fill = fillOverride ?? config.glassFill(colors, strong: strong);
 
-  return ListenableBuilder(
-    listenable: AppLifecycleGate.instance,
-    builder: (context, _) {
-      return _GlassFrosting(
-        colors: colors,
-        radius: radius,
-        sigma: shouldBlur && AppLifecycleGate.effectsEnabled ? blurSigma : 0,
-        fill: fill,
-        border:
-            border ??
-            Border.all(color: colors.glassBorder, width: config.borderWidth),
-        padding: padding,
-        child: child,
-      );
-    },
+  return _SolidPanel(
+    fill: fill,
+    border:
+        border ??
+        Border.all(color: colors.glassBorder, width: config.borderWidth),
+    radius: borderRadius,
+    padding: padding,
+    boxShadow: boxShadow,
+    child: child,
   );
 }
 
@@ -133,20 +71,18 @@ Widget appBarSurface(AppColorScheme colors, {Color? fillColor}) {
   final config = AppGlassConfig.current;
   final fill = fillColor ?? config.glassFill(colors, strong: true);
 
-  return ListenableBuilder(
-    listenable: AppLifecycleGate.instance,
-    builder: (context, _) {
-      return _GlassFrosting(
-        colors: colors,
-        radius: BorderRadius.zero,
-        sigma: config.backdropBlurAppBar && AppLifecycleGate.effectsEnabled
-            ? config.backdropBlurSigmaStrong
-            : 0,
-        fill: fill,
-        border: Border(bottom: BorderSide(color: colors.divider, width: 0.5)),
-        child: const SizedBox.expand(),
-      );
-    },
+  return _SolidPanel(
+    fill: fill,
+    border: Border(bottom: BorderSide(color: colors.divider, width: 0.5)),
+    radius: BorderRadius.zero,
+    boxShadow: [
+      BoxShadow(
+        color: colors.shadow.withValues(alpha: 0.25),
+        blurRadius: 6,
+        offset: const Offset(0, 2),
+      ),
+    ],
+    child: const SizedBox.expand(),
   );
 }
 
@@ -728,8 +664,6 @@ class GlassCard extends StatelessWidget {
           onTap: onTap,
           onLongPress: onLongPress,
           borderRadius: radius,
-          splashColor: colors.primary.withValues(alpha: 0.06),
-          highlightColor: Colors.transparent,
           child: content,
         ),
       );
@@ -780,8 +714,8 @@ class GlassBottomNav extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(28),
-          boxShadow: isLight
-              ? [
+          boxShadow: [
+                if (isLight) ...[
                   BoxShadow(
                     color: colors.shadow,
                     blurRadius: 22,
@@ -792,16 +726,20 @@ class GlassBottomNav extends StatelessWidget {
                     blurRadius: 4,
                     offset: const Offset(0, 1),
                   ),
-                ]
-              : null,
+                ] else ...[
+                  BoxShadow(
+                    color: colors.shadow,
+                    blurRadius: 12,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ],
         ),
         child: RepaintBoundary(
           child: glassSurface(
             colors: colors,
             borderRadius: BorderRadius.circular(28),
             strong: true,
-            sigma: context.glassConfig.dockBlurSigma,
-            enableBlur: context.glassConfig.backdropBlurDock,
             border: Border.all(
               color: colors.borderLight,
               width: 1,

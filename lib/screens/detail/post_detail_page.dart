@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../models/tieba_post.dart';
 import '../../services/tieba_account_service.dart';
 import '../../services/tieba_client.dart';
@@ -16,6 +17,7 @@ import '../../theme/app_glass.dart';
 import '../../widgets/app_empty_state.dart';
 import '../../widgets/app_feature_guide.dart';
 import '../../widgets/app_loading.dart';
+import '../../widgets/app_skeleton.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/comment_content_body.dart';
 import '../../widgets/favorite_bookmark_ribbon.dart';
@@ -45,6 +47,18 @@ List<TiebaSubComment> _mergeSubCommentsById(
     if (ids.add(comment.id)) merged.add(comment);
   }
   return merged;
+}
+
+Widget _copyOnLongPress(BuildContext context, String rawContent, Widget child) {
+  return GestureDetector(
+    onLongPress: () {
+      final plain = PostContentPlain.from(rawContent);
+      Clipboard.setData(ClipboardData(text: plain));
+      showAppToast(context, '已复制', type: AppToastType.success);
+    },
+    behavior: HitTestBehavior.translucent,
+    child: child,
+  );
 }
 
 class PostDetailPage extends StatefulWidget {
@@ -191,6 +205,7 @@ class _PostDetailBody extends StatefulWidget {
 class _PostDetailBodyState extends State<_PostDetailBody>
     with AutomaticKeepAliveClientMixin {
   bool _postLiking = false;
+  OverlayEntry? _likeEffectOverlay;
   final _scrollController = ScrollController();
   late final ScrollLoadTrigger _scrollLoadTrigger = ScrollLoadTrigger(
     onNearEnd: _loadMoreComments,
@@ -719,6 +734,31 @@ class _PostDetailBodyState extends State<_PostDetailBody>
     }
   }
 
+  Future<void> _onPostDoubleTap(TiebaPost post) async {
+    if (_postLiking) return;
+    setState(() => _postLiking = true);
+    try {
+      await _togglePostLike(post);
+    } finally {
+      if (mounted) setState(() => _postLiking = false);
+    }
+  }
+
+  void _showLikeEffect(Offset globalPosition) {
+    HapticFeedback.lightImpact();
+    _likeEffectOverlay?.remove();
+    final overlay = Overlay.of(context);
+    final overlayBox = overlay.context.findRenderObject() as RenderBox;
+    final local = overlayBox.globalToLocal(globalPosition);
+    _likeEffectOverlay = OverlayEntry(
+      builder: (_) => _LikeEffectAnimation(
+        position: local,
+        onDone: () => _likeEffectOverlay?.remove(),
+      ),
+    );
+    overlay.insert(_likeEffectOverlay!);
+  }
+
   void _openImage(String url) {
     Navigator.of(context).push(
       uiPageRoute(
@@ -743,30 +783,13 @@ class _PostDetailBodyState extends State<_PostDetailBody>
       );
     }
 
-    final showLoader = _loading && _detail == null;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _detail != null
-            ? _buildDetailBody(context, colors)
-            : _buildLoadingPreview(context, colors),
-        IgnorePointer(
-          ignoring: !showLoader,
-          child: AnimatedOpacity(
-            opacity: showLoader ? 1 : 0,
-            duration: const Duration(milliseconds: 260),
-            curve: Curves.easeInCubic,
-            child: const Center(
-              child: PersistentAppLoading(
-                key: ValueKey('post-detail-loading'),
-                message: '加载中…',
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
+    if (_loading && _detail == null) {
+      return PostDetailSkeleton(colors: colors);
+    }
+    if (_detail != null) {
+      return _buildDetailBody(context, colors);
+    }
+    return _buildLoadingPreview(context, colors);
   }
 
   Widget _buildLoadingPreview(BuildContext context, AppColorScheme colors) {
@@ -858,7 +881,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
               ? CoordinatedVerticalScrollPhysics(delegate: _scrollDelegate!)
               : const PullToFavoriteScrollPhysics(),
         ),
-        cacheExtent: 300,
+        cacheExtent: 0,
         slivers: [
           CupertinoSliverRefreshControl(
             onRefresh: _pullToFavorite,
@@ -911,6 +934,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
                     fontScaleNotifier: _fontScaleNotifier,
                     onImageTap: _openImage,
                     onLike: () => _toggleCommentLike(comment),
+                    onShowLikeEffect: _showLikeEffect,
                     onSubCommentLike: _toggleSubCommentLike,
                     showBottomDivider: i < _comments.length - 1,
                   );
@@ -962,15 +986,10 @@ class _PostDetailBodyState extends State<_PostDetailBody>
         ),
       ],
     );
-    return ValueListenableBuilder<double>(
-      valueListenable: _fontScaleNotifier,
-      builder: (context, fontScale, _) {
-        return TwoFingerScaleDetector(
-          scale: fontScale,
-          onScaleChanged: (scale) => _fontScaleNotifier.value = scale,
-          child: body,
-        );
-      },
+    return TwoFingerScaleDetector(
+      scaleNotifier: _fontScaleNotifier,
+      onScaleChanged: (scale) => _fontScaleNotifier.value = scale,
+      child: body,
     );
   }
 
@@ -983,22 +1002,25 @@ class _PostDetailBodyState extends State<_PostDetailBody>
             base.copyWith(fontSize: (base.fontSize ?? 14) * fontScale);
         return Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
-            decoration: BoxDecoration(
-              color: colors.card,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: colors.borderLight, width: 0.5),
-              boxShadow: [
-                BoxShadow(
-                  color: colors.shadow,
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          child: GestureDetector(
+            onDoubleTapDown: (d) => _showLikeEffect(d.globalPosition),
+            onDoubleTap: () => _onPostDoubleTap(post),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+              decoration: BoxDecoration(
+                color: colors.card,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: colors.borderLight, width: 0.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: colors.shadow,
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1082,12 +1104,16 @@ class _PostDetailBodyState extends State<_PostDetailBody>
                 ),
                 if (post.content.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  CommentContentBody.build(
-                    context: context,
-                    content: post.content,
-                    baseStyle: AppFonts.body(color: colors.textPrimary),
-                    onImageTap: _openImage,
-                    fontScale: fontScale,
+                  _copyOnLongPress(
+                    context,
+                    post.content,
+                    CommentContentBody.build(
+                      context: context,
+                      content: post.content,
+                      baseStyle: AppFonts.body(color: colors.textPrimary),
+                      onImageTap: _openImage,
+                      fontScale: fontScale,
+                    ),
                   ),
                 ] else if (post.video != null &&
                     post.video!.src.isNotEmpty) ...[
@@ -1109,7 +1135,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
                     likes: post.likes,
                     busy: _postLiking,
                     showZeroCount: true,
-                    iconSize: 18,
+                    iconSize: 24,
                     countStyle: s(AppFonts.label(color: colors.textMuted)),
                     onToggle: () async {
                       setState(() => _postLiking = true);
@@ -1123,6 +1149,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
                 ),
               ],
             ),
+          ),
           ),
         );
       },
@@ -1138,6 +1165,7 @@ class _CommentTile extends StatefulWidget {
   final void Function(String url) onImageTap;
   final Future<void> Function() onLike;
   final Future<void> Function(TiebaSubComment sub)? onSubCommentLike;
+  final void Function(Offset globalPosition) onShowLikeEffect;
   final bool showBottomDivider;
 
   const _CommentTile({
@@ -1148,6 +1176,7 @@ class _CommentTile extends StatefulWidget {
     required this.fontScaleNotifier,
     required this.onImageTap,
     required this.onLike,
+    required this.onShowLikeEffect,
     this.onSubCommentLike,
     this.showBottomDivider = true,
   });
@@ -1250,12 +1279,16 @@ class _CommentTileState extends State<_CommentTile> {
             ],
           ),
           const SizedBox(height: 6),
-          CommentContentBody.build(
-            context: context,
-            content: sub.content,
-            baseStyle: AppFonts.bodySmall(color: colors.textPrimary),
-            onImageTap: widget.onImageTap,
-            fontScale: fontScale,
+          _copyOnLongPress(
+            context,
+            sub.content,
+            CommentContentBody.build(
+              context: context,
+              content: sub.content,
+              baseStyle: AppFonts.bodySmall(color: colors.textPrimary),
+              onImageTap: widget.onImageTap,
+              fontScale: fontScale,
+            ),
           ),
         ],
       ),
@@ -1272,9 +1305,12 @@ class _CommentTileState extends State<_CommentTile> {
             base.copyWith(fontSize: (base.fontSize ?? 14) * fontScale);
 
         return RepaintBoundary(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          child: GestureDetector(
+            onDoubleTapDown: (d) => widget.onShowLikeEffect(d.globalPosition),
+            onDoubleTap: _handleLike,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
                 child: Row(
@@ -1328,7 +1364,7 @@ class _CommentTileState extends State<_CommentTile> {
                       isLiked: _isLiked,
                       likes: _likes,
                       busy: _liking,
-                      iconSize: 16,
+                      iconSize: 22,
                       countStyle: s(AppFonts.label(color: colors.textMuted)),
                       onToggle: _handleLike,
                     ),
@@ -1340,12 +1376,16 @@ class _CommentTileState extends State<_CommentTile> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    CommentContentBody.build(
-                      context: context,
-                      content: widget.comment.content,
-                      baseStyle: AppFonts.body(color: colors.textPrimary),
-                      onImageTap: widget.onImageTap,
-                      fontScale: fontScale,
+                    _copyOnLongPress(
+                      context,
+                      widget.comment.content,
+                      CommentContentBody.build(
+                        context: context,
+                        content: widget.comment.content,
+                        baseStyle: AppFonts.body(color: colors.textPrimary),
+                        onImageTap: widget.onImageTap,
+                        fontScale: fontScale,
+                      ),
                     ),
                     Align(
                       alignment: Alignment.centerRight,
@@ -1447,6 +1487,7 @@ class _CommentTileState extends State<_CommentTile> {
                 _CommentFloorDivider(colors: colors),
               if (!widget.showBottomDivider) const SizedBox(height: 14),
             ],
+          ),
           ),
         );
       },
@@ -1708,7 +1749,7 @@ class _SubCommentsPageState extends State<SubCommentsPage> {
     } else {
       body = ListView.builder(
         controller: _scrollController,
-        cacheExtent: 360,
+        cacheExtent: 0,
         padding: EdgeInsets.fromLTRB(
           16,
           12,
@@ -1785,11 +1826,15 @@ class _SubCommentsPageState extends State<SubCommentsPage> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    CommentContentBody.build(
-                      context: context,
-                      content: sub.content,
-                      baseStyle: AppFonts.bodySmall(color: colors.textPrimary),
-                      onImageTap: _openImage,
+                    _copyOnLongPress(
+                      context,
+                      sub.content,
+                      CommentContentBody.build(
+                        context: context,
+                        content: sub.content,
+                        baseStyle: AppFonts.bodySmall(color: colors.textPrimary),
+                        onImageTap: _openImage,
+                      ),
                     ),
                   ],
                 ),
@@ -1867,7 +1912,7 @@ class _SubCommentLikeButtonState extends State<_SubCommentLikeButton> {
       isLiked: _isLiked,
       likes: _likes,
       busy: _busy,
-      iconSize: 14,
+      iconSize: 18,
       countStyle: AppFonts.label(color: colors.textMuted),
       onToggle: _handleToggle,
     );
@@ -1936,13 +1981,11 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
           color: activeColor,
           fontFeatures: const [FontFeature.tabularFigures()],
         );
-    final countGap = widget.iconSize <= 14 ? 4.0 : 6.0;
-    final countSlotWidth = widget.iconSize <= 14 ? 30.0 : 38.0;
+    final countGap = widget.iconSize <= 18 ? 5.0 : 8.0;
+    final countSlotWidth = widget.iconSize <= 18 ? 34.0 : 44.0;
     final showCount = widget.likes > 0 || widget.showZeroCount;
 
-    return Transform.translate(
-      offset: const Offset(6, 0),
-      child: InkWell(
+    return InkWell(
         onTap: widget.busy ? null : _handleTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
@@ -1996,6 +2039,70 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
                 ),
               ),
             ],
+          ),
+        ),
+    );
+  }
+}
+
+class _LikeEffectAnimation extends StatefulWidget {
+  final Offset position;
+  final VoidCallback onDone;
+
+  const _LikeEffectAnimation({
+    required this.position,
+    required this.onDone,
+  });
+
+  @override
+  State<_LikeEffectAnimation> createState() => _LikeEffectAnimationState();
+}
+
+class _LikeEffectAnimationState extends State<_LikeEffectAnimation>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+  late final Animation<double> _opacity;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _scale = Tween<double>(begin: 0.6, end: 1.4).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack),
+    );
+    _opacity = Tween<double>(begin: 0.9, end: 0.0).animate(
+      CurvedAnimation(parent: _ctrl, curve: const Interval(0.15, 1.0, curve: Curves.easeOut)),
+    );
+    _ctrl.forward().then((_) => widget.onDone());
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const double size = 56;
+    return Positioned(
+      left: widget.position.dx - size / 2,
+      top: widget.position.dy - size / 2,
+      child: IgnorePointer(
+        child: FadeTransition(
+          opacity: _opacity,
+          child: ScaleTransition(
+            scale: _scale,
+            child: Image.asset(
+              'assets/icons/like_filled.png',
+              width: size,
+              height: size,
+              fit: BoxFit.contain,
+            ),
           ),
         ),
       ),

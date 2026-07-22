@@ -56,7 +56,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
             : RefreshIndicator(
                 onRefresh: _loadFavorites,
                 child: ListView.builder(
-                  cacheExtent: 500,
+                  cacheExtent: 0,
                   padding: EdgeInsets.fromLTRB(
                     16,
                     glassTopInset(context) + 8,

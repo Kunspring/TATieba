@@ -9,6 +9,15 @@ import '../screens/settings_page.dart';
 import 'app_theme_service.dart';
 import 'app_ui_context.dart';
 
+/// 打开帖子到首页嵌套 Navigator 的处理器（由 [MainScaffold] 注入）。
+/// 命名参数与 [PostDetailPage] 的构造保持一致，便于从推荐流带上下文滑动阅读。
+typedef HomePostOpenHandler = void Function({
+  required TiebaPost post,
+  required List<TiebaPost> posts,
+  required int initialIndex,
+  required Future<List<TiebaPost>> Function()? onLoadMore,
+});
+
 /// 全局 Navigator，用于 AI 从任意上下文 push 页面。
 final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 
@@ -136,6 +145,10 @@ class AppShellController extends ChangeNotifier {
 
   /// 应用切后台时无动画移除对话路由，避免与系统退出动画争抢 GPU。
   VoidCallback? onDismissChatForNavigationInstant;
+
+  /// 由 [MainScaffold] 注入：把帖子打开到首页嵌套 Navigator（导航栏常驻、返回即回推荐流）。
+  /// 为空时退回根 Navigator 全屏打开（旧行为）。
+  HomePostOpenHandler? onOpenPostInHome;
   void Function(String message)? onActionToast;
   bool Function()? isAgentChatOpen;
 
@@ -268,6 +281,18 @@ class AppShellController extends ChangeNotifier {
 
   void navigateToPost(TiebaPost post, {String? toast}) {
     runAfterNavigationPrep(() {
+      if (onOpenPostInHome != null) {
+        if (toast != null && toast.isNotEmpty) {
+          onActionToast?.call(toast);
+        }
+        onOpenPostInHome!(
+          post: post,
+          posts: [post],
+          initialIndex: 0,
+          onLoadMore: null,
+        );
+        return;
+      }
       final nav = _navigator;
       if (nav == null) return;
       if (toast != null && toast.isNotEmpty) {

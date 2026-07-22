@@ -7,6 +7,7 @@ abstract final class AppUiRouteNames {
   AppUiRouteNames._();
 
   static const postDetail = '/ui/post-detail';
+  static const homeFeed = '/ui/home-feed';
   static const userHome = '/ui/user-home';
   static const subComments = '/ui/sub-comments';
   static const privateChat = '/ui/private-chat';
@@ -211,6 +212,7 @@ class AppUiContextService {
     return switch (frame.name) {
       AppUiRouteNames.postDetail ||
       '/ui/post-detail' => _postDetailDesc(args, extras),
+      AppUiRouteNames.homeFeed || '/ui/home-feed' => _describeShell(),
       AppUiRouteNames.userHome || '/ui/user-home' => _userHomeDesc(args),
       AppUiRouteNames.subComments ||
       '/ui/sub-comments' => _subCommentsDesc(args),

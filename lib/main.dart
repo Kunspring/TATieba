@@ -15,6 +15,8 @@ import 'screens/login_hub_page.dart';
 import 'screens/qr_login_page.dart';
 import 'screens/web_login_page.dart';
 import 'utils/app_lifecycle_gate.dart';
+import 'models/tieba_post.dart';
+import 'screens/detail/post_detail_page.dart';
 import 'services/app_shell_controller.dart';
 import 'services/app_theme_service.dart';
 import 'services/app_ui_context.dart';
@@ -448,7 +450,11 @@ class _MainScaffoldState extends State<MainScaffold> {
   late Widget _forumTab;
   late Widget _messagesTab;
   late Widget _profileTab;
-  Widget? _homeTab;
+  final _homeNavKey = GlobalKey<NavigatorState>();
+  List<Page<dynamic>> _homePages = const [];
+  bool _homeAutoOpened = false;
+  int _homeAutoOpenSeq = 0;
+  late final Widget _homeTab;
   late List<Widget> _tabs;
 
   static const _placeholderTab = SizedBox.shrink();
@@ -456,6 +462,9 @@ class _MainScaffoldState extends State<MainScaffold> {
   @override
   void initState() {
     super.initState();
+    _homePages = [_homeFeedPage()];
+    _homeTab = _buildHomeNavigator();
+    AppShellController.instance.onOpenPostInHome = _openPostInHome;
     _rebuildHomeTab();
     _refreshTabs();
     AppShellController.instance.addListener(_onShellCommand);
@@ -556,16 +565,104 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 
   void _rebuildHomeTab() {
-    _homeTab = HomePage(
-      key: ValueKey('home$_loginKey${_selectedBar ?? ''}'),
-      selectedBar: _selectedBar,
-      onClearBar: _onClearBar,
+    _homePages = [
+      _homeFeedPage(),
+    ];
+  }
+
+  /// 首页嵌套 Navigator 的根路由：推荐流列表。
+  /// 推荐流为根、帖子详情为子路由 —— 导航栏留在 Scaffold 始终可见，
+  /// 打开帖子不覆盖导航栏，返回即 pop 回推荐流。
+  Page<dynamic> _homeFeedPage() => MaterialPage<dynamic>(
+        key: ValueKey('home-$_loginKey-${_selectedBar ?? ''}'),
+        name: AppUiRouteNames.homeFeed,
+        child: HomePage(
+          key: ValueKey('home-$_loginKey-${_selectedBar ?? ''}'),
+          selectedBar: _selectedBar,
+          onClearBar: _onClearBar,
+          onOpenPost: _openPostInHome,
+          onAutoOpenPost: _requestAutoOpenPost,
+        ),
+      );
+
+  Widget _buildHomeNavigator() => Navigator(
+        key: _homeNavKey,
+        observers: [appRouteLifecycleObserver],
+        pages: _homePages,
+        onDidRemovePage: (page) {
+          setState(() => _homePages.remove(page));
+        },
+      );
+
+  /// [AppShellController.onOpenPostInHome] 的实现：把帖子打开到首页嵌套 Navigator。
+  void _openPostInHome({
+    required TiebaPost post,
+    required List<TiebaPost> posts,
+    required int initialIndex,
+    required Future<List<TiebaPost>> Function()? onLoadMore,
+  }) {
+    _pushHomePost(
+      post: post,
+      posts: posts,
+      initialIndex: initialIndex,
+      onLoadMore: onLoadMore,
+    );
+    AppShellController.instance.selectTab(AppShellTab.home);
+  }
+
+  void _pushHomePost({
+    required TiebaPost post,
+    required List<TiebaPost> posts,
+    required int initialIndex,
+    required Future<List<TiebaPost>> Function()? onLoadMore,
+  }) {
+    if (_homeNavKey.currentState == null) return;
+    _homeAutoOpenSeq++;
+    _homePages = [
+      ..._homePages,
+      MaterialPage<dynamic>(
+        key: ValueKey('post-${post.id}-$_homeAutoOpenSeq'),
+        name: AppUiRouteNames.postDetail,
+        arguments: <String, dynamic>{
+          'tid': post.id,
+          if (post.title.isNotEmpty) 'title': post.title,
+          if (post.barName.isNotEmpty) 'bar_name': post.barName,
+          if (post.author.isNotEmpty) 'author': post.author,
+        },
+        child: PostDetailPage(
+          post: post,
+          posts: posts,
+          initialIndex: initialIndex,
+          onLoadMore: onLoadMore,
+        ),
+      ),
+    ];
+    setState(() {});
+  }
+
+  /// 冷启动自动打开首帖（仅一次）：App 默认进入"阅读帖子"，像打开抖音直接刷视频。
+  void _requestAutoOpenPost({
+    required TiebaPost post,
+    required List<TiebaPost> posts,
+    required int initialIndex,
+    required Future<List<TiebaPost>> Function()? onLoadMore,
+  }) {
+    if (_homeAutoOpened) return;
+    if (_currentIndex != 0) return;
+    if (_homeNavKey.currentState == null) return;
+    if (_homePages.length > 1) return;
+    _homeAutoOpened = true;
+    _pushHomePost(
+      post: post,
+      posts: posts,
+      initialIndex: initialIndex,
+      onLoadMore: onLoadMore,
     );
   }
 
   void _refreshTabs() {
     _tabs = [
-      RepaintBoundary(child: _homeTab!),
+      RepaintBoundary(child: _homeTab),
       RepaintBoundary(child: _tabLoaded[1] ? _forumTab : _placeholderTab),
       RepaintBoundary(child: _tabLoaded[2] ? _messagesTab : _placeholderTab),
       RepaintBoundary(child: _tabLoaded[3] ? _profileTab : _placeholderTab),
@@ -769,13 +866,22 @@ class _MainScaffoldState extends State<MainScaffold> {
       listenable: companion,
       builder: (context, _) {
         final agentChatOpen = companion.agentChatOpen;
+        final homeNavState = _homeNavKey.currentState;
+        final homeNavCanPop =
+            _currentIndex == 0 && (homeNavState?.canPop() ?? false);
         return PopScope(
-          canPop:
-              !agentChatOpen && (_selectedBar == null || _currentIndex != 0),
+          canPop: !agentChatOpen &&
+              !homeNavCanPop &&
+              (_selectedBar == null || _currentIndex != 0),
           onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
             if (agentChatOpen) {
               AppShellController.instance.handleAgentChatBack?.call();
+              return;
+            }
+            final nav = _homeNavKey.currentState;
+            if (_currentIndex == 0 && nav != null && nav.canPop()) {
+              nav.pop();
               return;
             }
             if (_selectedBar != null && _currentIndex == 0) {

@@ -36,8 +36,16 @@ import '../login_hub_page.dart';
 class HomePage extends StatefulWidget {
   final String? selectedBar;
   final VoidCallback? onClearBar;
+  final HomePostOpenHandler? onOpenPost;
+  final HomePostOpenHandler? onAutoOpenPost;
 
-  const HomePage({super.key, this.selectedBar, this.onClearBar});
+  const HomePage({
+    super.key,
+    this.selectedBar,
+    this.onClearBar,
+    this.onOpenPost,
+    this.onAutoOpenPost,
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -63,6 +71,7 @@ class _HomePageState extends State<HomePage>
   List<TiebaPost> _posts = [];
   bool _loading = false;
   bool _hasMore = true;
+  bool _autoOpenFired = false;
   bool _isLoggedIn = false;
   int _barPage = 0;
   bool? _barFollowed;
@@ -230,6 +239,8 @@ class _HomePageState extends State<HomePage>
         _barPage = 0;
       }
     });
+
+    _maybeAutoOpen();
 
     if (shouldAutoLoad) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -469,6 +480,37 @@ class _HomePageState extends State<HomePage>
     }
   }
 
+  /// 供帖子详情页"下滑看下一篇"使用的加载回调（与推荐流同一份数据）。
+  Future<List<TiebaPost>> Function()? _buildLoadMore() {
+    if (!_hasMore) return null;
+    return () async {
+      if (!_hasMore) return <TiebaPost>[];
+      final more = await TiebaCrawlerService.loadMorePosts();
+      if (!mounted) return <TiebaPost>[];
+      setState(() {
+        _posts.addAll(more);
+        _hasMore = TiebaCrawlerService.hasMore;
+      });
+      _persistSession();
+      return more;
+    };
+  }
+
+  /// 冷启动自动打开首帖（仅触发一次）：让 App 默认进入"阅读帖子"而非推荐流列表。
+  void _maybeAutoOpen() {
+    if (_autoOpenFired || _posts.isEmpty) return;
+    _autoOpenFired = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onAutoOpenPost?.call(
+        post: _posts.first,
+        posts: _posts,
+        initialIndex: 0,
+        onLoadMore: _buildLoadMore(),
+      );
+    });
+  }
+
   Future<void> _loadPosts() async {
     final refreshing = _posts.isNotEmpty;
     if (_isSingleBar) {
@@ -499,6 +541,7 @@ class _HomePageState extends State<HomePage>
       _scheduleRecommendLevelEnrich();
       _persistSession();
       _scheduleScrollCheck();
+      _maybeAutoOpen();
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -892,34 +935,11 @@ class _HomePageState extends State<HomePage>
                   index: index,
                   onTap: () {
                     AppShellController.instance.dismissChatForNavigation();
-                    Navigator.of(context).push(
-                      uiPageRoute(
-                        name: AppUiRouteNames.postDetail,
-                        arguments: {
-                          'tid': post.id,
-                          if (post.title.isNotEmpty) 'title': post.title,
-                          if (post.barName.isNotEmpty) 'bar_name': post.barName,
-                          if (post.author.isNotEmpty) 'author': post.author,
-                        },
-                        builder: (_) => PostDetailPage(
-                          post: post,
-                          posts: _posts,
-                          initialIndex: index,
-                          onLoadMore: () async {
-                            if (!_hasMore) return [];
-                            final more =
-                                await TiebaCrawlerService.loadMorePosts();
-                            if (mounted) {
-                              setState(() {
-                                _posts.addAll(more);
-                                _hasMore = TiebaCrawlerService.hasMore;
-                              });
-                              _persistSession();
-                            }
-                            return more;
-                          },
-                        ),
-                      ),
+                    widget.onOpenPost?.call(
+                      post: post,
+                      posts: _posts,
+                      initialIndex: index,
+                      onLoadMore: _buildLoadMore(),
                     );
                   },
                   onToggleFavorite: () => _onToggleFavorite(post),

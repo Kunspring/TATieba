@@ -452,8 +452,7 @@ class _MainScaffoldState extends State<MainScaffold> {
   late Widget _profileTab;
   final _homeNavKey = GlobalKey<NavigatorState>();
   List<Page<dynamic>> _homePages = const [];
-  int _homeAutoOpenSeq = 0;
-  late final Widget _homeTab;
+  late Widget _homeTab;
   late List<Widget> _tabs;
 
   static const _placeholderTab = SizedBox.shrink();
@@ -567,6 +566,10 @@ class _MainScaffoldState extends State<MainScaffold> {
     _homePages = [
       _homeFeedPage(),
     ];
+    // 重建首页嵌套 Navigator 实例：让 _homePages 的变化（selectedBar 切换、
+    // 推荐流根重建）真正驱动 NavigatorState.didUpdateWidget。否则固定的
+    // Navigator 实例不会感知 pages 变化，导致『点吧进不去吧内容』等问题。
+    _homeTab = _buildHomeNavigator();
   }
 
   /// 首页嵌套 Navigator 的根路由：推荐流列表。
@@ -634,28 +637,30 @@ class _MainScaffoldState extends State<MainScaffold> {
     required int initialIndex,
     required Future<List<TiebaPost>> Function()? onLoadMore,
   }) {
-    if (_homeNavKey.currentState == null) return;
-    _homeAutoOpenSeq++;
-    _homePages = [
-      ..._homePages,
-      MaterialPage<dynamic>(
-        key: ValueKey('post-${post.id}-$_homeAutoOpenSeq'),
-        name: AppUiRouteNames.postDetail,
-        arguments: <String, dynamic>{
-          'tid': post.id,
-          if (post.title.isNotEmpty) 'title': post.title,
-          if (post.barName.isNotEmpty) 'bar_name': post.barName,
-          if (post.author.isNotEmpty) 'author': post.author,
-        },
-        child: PostDetailPage(
-          post: post,
-          posts: posts,
-          initialIndex: initialIndex,
-          onLoadMore: onLoadMore,
-        ),
+    // 改用命令式 push，与用户点帖（Navigator.of(context).push）一致：
+    // 不依赖固定的 _homePages 字段，避免与声明式 pages 重建冲突，且不会
+    // 丢失首页已 push 的帖子路由。
+    final route = uiPageRoute(
+      name: AppUiRouteNames.postDetail,
+      arguments: <String, dynamic>{
+        'tid': post.id,
+        if (post.title.isNotEmpty) 'title': post.title,
+        if (post.barName.isNotEmpty) 'bar_name': post.barName,
+        if (post.author.isNotEmpty) 'author': post.author,
+      },
+      builder: (_) => PostDetailPage(
+        post: post,
+        posts: posts,
+        initialIndex: initialIndex,
+        onLoadMore: onLoadMore,
       ),
-    ];
-    setState(() {});
+    );
+    final nav = _homeNavKey.currentState;
+    if (nav == null) {
+      appNavigatorKey.currentState?.push(route);
+      return;
+    }
+    nav.push(route);
   }
 
   void _refreshTabs() {

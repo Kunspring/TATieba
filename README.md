@@ -12,18 +12,18 @@
 
 ### 贴吧浏览
 - **推荐流**：首页推荐帖子列表，支持分页加载
-- **进吧**：浏览指定贴吧，支持吧内搜索和分区索引
-- **帖子详情**：查看帖子内容、评论、图片、视频，支持只看楼主
-- **收藏**：收藏帖子和贴吧，支持离线缓存
+- **进吧**：浏览已关注的贴吧，支持分区索引
+- **帖子详情**：查看帖子内容、评论、图片、视频，支持上下滑动切换帖子
+- **收藏**：收藏帖子，再次打开时按 ID 拉取最新内容
 - **用户主页**：查看用户信息、等级、发帖记录
 
 ### 账号系统
 - **二维码登录**：扫码登录百度账号
 - **网页登录**：内置 WebView 完成百度通行证认证
-- **多账号**：支持绑定和切换百度账号
+- **账号管理**：绑定/解绑百度账号，本地持久化登录态
 
 ### 消息
-- **私信**：发送和接收私信，支持实时推送（WebSocket）
+- **私信**：发送和接收私信，前后台自动轮询拉取新消息
 - **消息通知**：新消息本地推送提醒
 - **签到提醒**：定时提醒签到，支持自定义时间
 
@@ -50,7 +50,7 @@
 - **框架**：Flutter 3.x + Dart 3.x
 - **网络**：HTTP + WebSocket，自实现百度贴吧 API 签名与 Protobuf 通信
 - **状态管理**：基于 `ValueNotifier` + `ListenableBuilder` 的轻量级方案
-- **AI**：兼容 OpenAI 格式的 LLM API，支持 Function Calling
+- **AI**：默认接入 DeepSeek API，兼容 OpenAI Chat Completions 格式，支持 Function Calling
 - **语音**：讯飞语音识别 + Flutter TTS
 - **本地存储**：SharedPreferences
 - **图片缓存**：CachedNetworkImage + 自研封面图缓存
@@ -113,10 +113,10 @@ flutter build web --release
 ### AI 助手配置
 
 在应用内「助手设置」页面配置：
-- API 地址（兼容 OpenAI Chat Completions 格式）
-- API Key
-- 模型名称
-- 系统提示词（支持自定义 Persona）
+- **API 地址**：默认使用 DeepSeek API（`https://api.deepseek.com`），也可配置为其他兼容 OpenAI Chat Completions 格式的接口
+- **API Key**
+- **模型名称**：默认 `deepseek-v4-flash`，可选 `deepseek-v4-pro`
+- **系统提示词**：支持自定义 Persona
 
 ## CI/CD
 

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/tieba_post.dart';
@@ -11,6 +13,7 @@ import '../theme/app_colors.dart';
 import '../theme/app_decorations.dart';
 import '../theme/app_fonts.dart';
 import '../theme/app_glass.dart';
+import '../utils/app_resume_refresh.dart';
 import '../utils/tieba_portrait.dart';
 import '../widgets/app_empty_state.dart';
 import '../widgets/app_loading.dart';
@@ -25,11 +28,15 @@ class MessagesPage extends StatefulWidget {
 }
 
 class MessagesPageState extends State<MessagesPage>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   MessageFeedSnapshot? _feed;
   bool _loading = true;
   bool _isLoggedIn = false;
   bool _notifyExpanded = true;
+
+  // 从后台回前台自动刷新所需的状态记录。
+  DateTime? _bgPausedAt;
+  DateTime? _lastResumeRefreshAt;
 
   @override
   bool get wantKeepAlive => true;
@@ -37,7 +44,38 @@ class MessagesPageState extends State<MessagesPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bootstrap();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final pausedAt = _bgPausedAt;
+      _bgPausedAt = null;
+      final now = DateTime.now();
+      final awayLongEnough = pausedAt != null &&
+          now.difference(pausedAt) >= kResumeRefreshMinInterval;
+      final throttleOk = _lastResumeRefreshAt == null ||
+          now.difference(_lastResumeRefreshAt!) >= kResumeRefreshMinInterval;
+      if (awayLongEnough && throttleOk) {
+        // 离开较久，重新拉取私信与互动提醒，保证"打开即见新内容"。
+        _lastResumeRefreshAt = now;
+        unawaited(refresh());
+      }
+      return;
+    }
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _bgPausedAt ??= DateTime.now();
+    }
   }
 
   /// 登录变化或切到消息 Tab 时刷新。

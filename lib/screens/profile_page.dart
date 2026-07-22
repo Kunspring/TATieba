@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../constants/app_info.dart';
 import '../models/tieba_post.dart';
@@ -17,6 +19,7 @@ import '../widgets/app_loading.dart';
 import '../widgets/app_toast.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/user_level_badges.dart';
+import '../utils/app_resume_refresh.dart';
 import '../utils/open_user_home.dart';
 import 'agent_config_page.dart';
 import 'favorites_page.dart';
@@ -33,7 +36,7 @@ class ProfilePage extends StatefulWidget {
 }
 
 class ProfilePageState extends State<ProfilePage>
-    with AutomaticKeepAliveClientMixin {
+    with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   String? _displayName;
   String? _accountName;
   String? _avatarUrl;
@@ -43,15 +46,50 @@ class ProfilePageState extends State<ProfilePage>
   List<TiebaPost> _favorites = [];
   bool _loadingFavs = true;
 
+  // 从后台回前台自动刷新所需的状态记录。
+  DateTime? _bgPausedAt;
+  DateTime? _lastResumeRefreshAt;
+
   @override
   bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _applyLocalSnapshot();
     _loadUserInfo();
     _bootstrapFavorites();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final pausedAt = _bgPausedAt;
+      _bgPausedAt = null;
+      final now = DateTime.now();
+      final awayLongEnough = pausedAt != null &&
+          now.difference(pausedAt) >= kResumeRefreshMinInterval;
+      final throttleOk = _lastResumeRefreshAt == null ||
+          now.difference(_lastResumeRefreshAt!) >= kResumeRefreshMinInterval;
+      if (awayLongEnough && throttleOk) {
+        // 离开较久，重新拉取个人资料与收藏，保证"打开即见新内容"。
+        _lastResumeRefreshAt = now;
+        unawaited(refresh());
+      }
+      return;
+    }
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _bgPausedAt ??= DateTime.now();
+    }
   }
 
   void _applyLocalSnapshot() {

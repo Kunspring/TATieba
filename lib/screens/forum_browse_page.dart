@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../services/forum_recent_service.dart';
+import '../utils/app_resume_refresh.dart';
 import '../services/sign_in_reminder_service.dart';
 import '../services/sign_in_progress_service.dart';
 import '../services/tieba_account_service.dart';
@@ -49,6 +51,10 @@ class _ForumBrowsePageState extends State<ForumBrowsePage>
   bool _signedInToday = false;
   _ForumViewMode _viewMode = _ForumViewMode.grid;
 
+  // 从后台回前台自动刷新所需的状态记录。
+  DateTime? _bgPausedAt;
+  DateTime? _lastResumeRefreshAt;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -69,8 +75,34 @@ class _ForumBrowsePageState extends State<ForumBrowsePage>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _refreshSignInStatus();
+      final pausedAt = _bgPausedAt;
+      _bgPausedAt = null;
+      final now = DateTime.now();
+      final awayLongEnough = pausedAt != null &&
+          now.difference(pausedAt) >= kResumeRefreshMinInterval;
+      final throttleOk = _lastResumeRefreshAt == null ||
+          now.difference(_lastResumeRefreshAt!) >= kResumeRefreshMinInterval;
+      if (awayLongEnough && throttleOk) {
+        // 离开较久，重新拉取关注吧/最近进入，保证"打开即见新内容"。
+        _lastResumeRefreshAt = now;
+        unawaited(_refreshData());
+      } else {
+        // 间隔过短：仅同步轻量的签到状态，避免无谓的全量请求。
+        unawaited(_refreshSignInStatus());
+      }
+      return;
     }
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
+      _bgPausedAt ??= DateTime.now();
+    }
+  }
+
+  /// 供应用回到前台时主动刷新（外部统一驱动亦可调用）。
+  void refresh() {
+    if (!mounted) return;
+    unawaited(_refreshData());
   }
 
   Future<void> _bootstrap() async {

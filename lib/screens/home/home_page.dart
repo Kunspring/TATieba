@@ -9,6 +9,7 @@ import '../../utils/app_lifecycle_gate.dart';
 import '../../utils/list_update_scheduler.dart';
 import '../../utils/scroll_load_trigger.dart';
 import '../../utils/scroll_settle.dart';
+import '../../utils/app_resume_refresh.dart';
 import '../../services/home_feed_session.dart';
 import '../../services/app_shell_controller.dart';
 import '../../services/app_ui_context.dart';
@@ -73,6 +74,12 @@ class _HomePageState extends State<HomePage>
   Timer? _backgroundPersistTimer;
   static const _backgroundPersistDelay = Duration(milliseconds: 1200);
 
+  // 打开 App（冷启动/从后台回前台）自动刷新首页所需的节流与状态记录。
+  DateTime? _bgPausedAt;
+  DateTime? _lastAutoRefreshAt;
+  // 与"打开即刷新"的统一节流保持一致：从后台回前台超过该间隔才静默刷新。
+  static const _autoRefreshMinInterval = kResumeRefreshMinInterval;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -116,10 +123,12 @@ class _HomePageState extends State<HomePage>
 
     if (state == AppLifecycleState.resumed) {
       _backgroundPersistTimer?.cancel();
+      _maybeAutoRefreshOnResume();
       return;
     }
 
     if (state == AppLifecycleState.inactive) {
+      _bgPausedAt ??= DateTime.now();
       _haltScrollAndLoads();
       _scheduleBackgroundPersist();
       return;
@@ -128,8 +137,35 @@ class _HomePageState extends State<HomePage>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden ||
         state == AppLifecycleState.detached) {
+      _bgPausedAt ??= DateTime.now();
       _scheduleBackgroundPersist();
     }
+  }
+
+  // 从后台回前台时，若离开时间较长（或超过节流间隔）则静默刷新首页。
+  void _maybeAutoRefreshOnResume() {
+    if (AgentCompanionScope.maybeOf(context)?.agentChatOpen ?? false) return;
+    final pausedAt = _bgPausedAt;
+    _bgPausedAt = null;
+    if (pausedAt == null) return;
+    if (DateTime.now().difference(pausedAt) >= _autoRefreshMinInterval) {
+      _autoRefresh();
+    }
+  }
+
+  // 静默后台刷新首页：先展示已有内容，刷新完成后无感更新，不弹骨架屏。
+  // force=true 用于冷启动，忽略节流限制；force=false 用于回前台，受节流保护。
+  void _autoRefresh([bool force = false]) {
+    if (!mounted || !AppLifecycleGate.isActive) return;
+    if (_loading || _loadingMoreNotifier.value) return;
+    final now = DateTime.now();
+    if (!force &&
+        _lastAutoRefreshAt != null &&
+        now.difference(_lastAutoRefreshAt!) < _autoRefreshMinInterval) {
+      return;
+    }
+    _lastAutoRefreshAt = now;
+    unawaited(_loadPosts());
   }
 
   void _scheduleBackgroundPersist() {
@@ -201,6 +237,13 @@ class _HomePageState extends State<HomePage>
       });
     } else if (!_isSingleBar && _posts.isNotEmpty) {
       _scheduleRecommendLevelEnrich();
+    }
+
+    // 冷启动且已有缓存内容时，首帧后静默刷新首页：既保证秒开，又让内容保持最新。
+    if (!shouldAutoLoad && _posts.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _autoRefresh(true);
+      });
     }
 
     final offset = snapshot?.scrollOffset ?? 0;

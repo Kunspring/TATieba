@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -57,53 +59,82 @@ Widget buildMarkdownMedia(
       alt == 'emoticon' ||
       url.contains('image_emoticon') ||
       url.contains('/tb/editor/images/');
+  if (isEmoji) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 0),
+      child: GestureDetector(
+        onTap: () => onImageTap(url),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: CachedNetworkImage(
+            imageUrl: displayUrl,
+            width: 28 * fontScale,
+            height: 28 * fontScale,
+            memCacheWidth: cacheWidth,
+            maxWidthDiskCache: cacheWidth,
+            errorWidget: (_, _, _) => const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    );
+  }
+  // 非表情图片：按图片真实宽高比渲染，绝不裁切（BoxFit.contain）。
+  // 仅设 width，Flutter 会按图源固有比例推导高度；再用 ConstrainedBox
+  // 限制单图最大高度（约占屏高 70%），避免竖图/长图过度占用屏幕。
+  // loading 阶段用占位高度预留空间，防止图片解码后撑高评论项导致滚动跳动。
   return Padding(
-    padding: EdgeInsets.symmetric(vertical: isEmoji ? 0 : 8),
-    child: GestureDetector(
-      onTap: () => onImageTap(url),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(isEmoji ? 4 : 8),
-        child: isEmoji
-            ? CachedNetworkImage(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: LayoutBuilder(
+      builder: (ctx, constraints) {
+        final w = constraints.maxWidth;
+        final maxH = _previewMaxHeight(ctx, w);
+        final known =
+            config.width != null && config.height != null && config.width! > 0;
+        final aspect = known ? config.width! / config.height! : 4 / 3;
+        final placeholderH = min(w / aspect, maxH);
+        return GestureDetector(
+          onTap: () => onImageTap(url),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: w, maxHeight: maxH),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: CachedNetworkImage(
                 imageUrl: displayUrl,
-                width: 28 * fontScale,
-                height: 28 * fontScale,
+                width: w,
+                fit: BoxFit.contain,
                 memCacheWidth: cacheWidth,
                 maxWidthDiskCache: cacheWidth,
-                errorWidget: (_, _, _) => const SizedBox.shrink(),
-              )
-            : AspectRatio(
-                aspectRatio:
-                    (config.width != null &&
-                        config.height != null &&
-                        config.width! > 0 &&
-                        config.height! > 0)
-                    ? config.width! / config.height!
-                    : 4 / 3,
-                child: CachedNetworkImage(
-                  imageUrl: displayUrl,
-                  fit: (config.width != null && config.height != null)
-                      ? BoxFit.contain
-                      : BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  memCacheWidth: cacheWidth,
-                  maxWidthDiskCache: cacheWidth,
-                  progressIndicatorBuilder: (_, _, _) =>
-                      Container(color: colors.surfaceMuted),
-                  errorWidget: (_, _, _) => Container(
-                    alignment: Alignment.center,
-                    color: colors.surfaceMuted,
-                    child: Icon(
-                      Icons.broken_image_outlined,
-                      color: colors.textMuted,
-                    ),
+                progressIndicatorBuilder: (_, _, _) => Container(
+                  width: w,
+                  height: placeholderH,
+                  color: colors.surfaceMuted,
+                ),
+                errorWidget: (_, _, _) => Container(
+                  width: w,
+                  height: placeholderH,
+                  alignment: Alignment.center,
+                  color: colors.surfaceMuted,
+                  child: Icon(
+                    Icons.broken_image_outlined,
+                    color: colors.textMuted,
                   ),
                 ),
               ),
-      ),
+            ),
+          ),
+        );
+      },
     ),
   );
+}
+
+/// 单张内联图片允许的最大显示高度。
+/// 取「内容宽度 × 4/3」与「屏幕高度 × 0.7」的较小值：
+/// - 限制竖图/长图不至于吃满整屏（占用屏幕资源更合理）；
+/// - 宽图天然更矮，不会被此上限影响。
+double _previewMaxHeight(BuildContext context, double width) {
+  final vh = MediaQuery.of(context).size.height;
+  return min(width * 4 / 3, vh * 0.7);
 }
 
 double _aspectRatioFromConfig(MarkdownImageConfig config) {

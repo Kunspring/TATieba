@@ -452,7 +452,6 @@ class _MainScaffoldState extends State<MainScaffold> {
   late Widget _profileTab;
   final _homeNavKey = GlobalKey<NavigatorState>();
   List<Page<dynamic>> _homePages = const [];
-  bool _homeAutoOpened = false;
   int _homeAutoOpenSeq = 0;
   late final Widget _homeTab;
   late List<Widget> _tabs;
@@ -580,8 +579,6 @@ class _MainScaffoldState extends State<MainScaffold> {
           key: ValueKey('home-$_loginKey-${_selectedBar ?? ''}'),
           selectedBar: _selectedBar,
           onClearBar: _onClearBar,
-          onOpenPost: _openPostInHome,
-          onAutoOpenPost: _requestAutoOpenPost,
         ),
       );
 
@@ -601,6 +598,27 @@ class _MainScaffoldState extends State<MainScaffold> {
     required int initialIndex,
     required Future<List<TiebaPost>> Function()? onLoadMore,
   }) {
+    // 嵌套 Navigator 未就绪时退回根 Navigator 保底（导航栏会被覆盖，但保证能开帖）。
+    if (_homeNavKey.currentState == null) {
+      appNavigatorKey.currentState?.push(
+        uiPageRoute(
+          name: AppUiRouteNames.postDetail,
+          arguments: <String, dynamic>{
+            'tid': post.id,
+            if (post.title.isNotEmpty) 'title': post.title,
+            if (post.barName.isNotEmpty) 'bar_name': post.barName,
+            if (post.author.isNotEmpty) 'author': post.author,
+          },
+          builder: (_) => PostDetailPage(
+            post: post,
+            posts: posts,
+            initialIndex: initialIndex,
+            onLoadMore: onLoadMore,
+          ),
+        ),
+      );
+      return;
+    }
     _pushHomePost(
       post: post,
       posts: posts,
@@ -638,26 +656,6 @@ class _MainScaffoldState extends State<MainScaffold> {
       ),
     ];
     setState(() {});
-  }
-
-  /// 冷启动自动打开首帖（仅一次）：App 默认进入"阅读帖子"，像打开抖音直接刷视频。
-  void _requestAutoOpenPost({
-    required TiebaPost post,
-    required List<TiebaPost> posts,
-    required int initialIndex,
-    required Future<List<TiebaPost>> Function()? onLoadMore,
-  }) {
-    if (_homeAutoOpened) return;
-    if (_currentIndex != 0) return;
-    if (_homeNavKey.currentState == null) return;
-    if (_homePages.length > 1) return;
-    _homeAutoOpened = true;
-    _pushHomePost(
-      post: post,
-      posts: posts,
-      initialIndex: initialIndex,
-      onLoadMore: onLoadMore,
-    );
   }
 
   void _refreshTabs() {

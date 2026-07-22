@@ -36,15 +36,11 @@ import '../login_hub_page.dart';
 class HomePage extends StatefulWidget {
   final String? selectedBar;
   final VoidCallback? onClearBar;
-  final HomePostOpenHandler? onOpenPost;
-  final HomePostOpenHandler? onAutoOpenPost;
 
   const HomePage({
     super.key,
     this.selectedBar,
     this.onClearBar,
-    this.onOpenPost,
-    this.onAutoOpenPost,
   });
 
   @override
@@ -502,11 +498,24 @@ class _HomePageState extends State<HomePage>
     _autoOpenFired = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      widget.onAutoOpenPost?.call(
-        post: _posts.first,
-        posts: _posts,
-        initialIndex: 0,
-        onLoadMore: _buildLoadMore(),
+      // 直接用嵌套 Navigator 的 context push：导航栏常驻、返回回推荐流，
+      // 不依赖外部 GlobalKey 的 currentState（时序不稳）。
+      Navigator.of(context).push(
+        uiPageRoute(
+          name: AppUiRouteNames.postDetail,
+          arguments: <String, dynamic>{
+            'tid': _posts.first.id,
+            if (_posts.first.title.isNotEmpty) 'title': _posts.first.title,
+            if (_posts.first.barName.isNotEmpty) 'bar_name': _posts.first.barName,
+            if (_posts.first.author.isNotEmpty) 'author': _posts.first.author,
+          },
+          builder: (_) => PostDetailPage(
+            post: _posts.first,
+            posts: _posts,
+            initialIndex: 0,
+            onLoadMore: _buildLoadMore(),
+          ),
+        ),
       );
     });
   }
@@ -935,11 +944,23 @@ class _HomePageState extends State<HomePage>
                   index: index,
                   onTap: () {
                     AppShellController.instance.dismissChatForNavigation();
-                    widget.onOpenPost?.call(
-                      post: post,
-                      posts: _posts,
-                      initialIndex: index,
-                      onLoadMore: _buildLoadMore(),
+                    // 用嵌套 Navigator 的 context push：导航栏常驻、返回回推荐流。
+                    Navigator.of(context).push(
+                      uiPageRoute(
+                        name: AppUiRouteNames.postDetail,
+                        arguments: <String, dynamic>{
+                          'tid': post.id,
+                          if (post.title.isNotEmpty) 'title': post.title,
+                          if (post.barName.isNotEmpty) 'bar_name': post.barName,
+                          if (post.author.isNotEmpty) 'author': post.author,
+                        },
+                        builder: (_) => PostDetailPage(
+                          post: post,
+                          posts: _posts,
+                          initialIndex: index,
+                          onLoadMore: _buildLoadMore(),
+                        ),
+                      ),
                     );
                   },
                   onToggleFavorite: () => _onToggleFavorite(post),

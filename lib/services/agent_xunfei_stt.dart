@@ -35,6 +35,9 @@ class AgentXunfeiStt {
   bool _listening = false;
   bool _firstFrameSent = false;
   bool _endSent = false;
+  bool _serverEnded = false;
+  bool _finalDelivered = false;
+  Future<void>? _finishFuture;
   final List<String> _segments = [];
 
   String _lastText = '';
@@ -100,6 +103,9 @@ class AgentXunfeiStt {
     void Function(double level)? onLevel,
   }) async {
     if (_listening) return '正在听写中';
+    if (_finishFuture != null) {
+      await _finishFuture;
+    }
 
     _onPartial = onPartial;
     _onFinal = onFinal;
@@ -110,6 +116,9 @@ class AgentXunfeiStt {
     _audioBuffer.clear();
     _firstFrameSent = false;
     _endSent = false;
+    _serverEnded = false;
+    _finalDelivered = false;
+    _finishFuture = null;
 
     final prepared = await prepare();
     if (!prepared) {
@@ -133,11 +142,11 @@ class AgentXunfeiStt {
         _onWsMessage,
         onError: (Object e) {
           _lastError = e.toString();
-          unawaited(_finish(cancel: true));
+          _finishFuture = _finish(cancel: true);
         },
         onDone: () {
           if (_listening) {
-            unawaited(_finish(cancel: false));
+            _finishFuture = _finish(cancel: false);
           }
         },
         cancelOnError: true,
@@ -173,7 +182,8 @@ class AgentXunfeiStt {
 
   Future<void> stop() async {
     if (!_listening) return;
-    await _finish(cancel: false);
+    _finishFuture = _finish(cancel: false);
+    await _finishFuture;
   }
 
   Future<void> cancel() async {
@@ -181,7 +191,8 @@ class AgentXunfeiStt {
       _lastText = '';
       return;
     }
-    await _finish(cancel: true);
+    _finishFuture = _finish(cancel: true);
+    await _finishFuture;
   }
 
   Future<void> _finish({required bool cancel}) async {
@@ -194,7 +205,9 @@ class AgentXunfeiStt {
       await _recorder.stop();
     } catch (_) {}
 
-    if (!cancel && _channel != null && !_endSent) {
+    // 仅在用户主动停止且服务端尚未结束（未返回 status==2）时补发结束帧。
+    // 若服务端已先结束，连接即将/已经关闭，再写 sink 会抛 StateError。
+    if (!cancel && _channel != null && !_endSent && !_serverEnded) {
       _flushAudioFrames(forceAll: true);
       _sendEndFrame();
       await Future<void>.delayed(const Duration(milliseconds: 280));
@@ -213,15 +226,24 @@ class AgentXunfeiStt {
     } else {
       final text = _segments.join().trim();
       if (text.isNotEmpty) {
-        _lastText = text;
-        _onPartial?.call(text);
-        _onFinal?.call(text);
+        _deliverFinal(text);
       }
     }
 
     _audioBuffer.clear();
     _firstFrameSent = false;
     _endSent = false;
+    _serverEnded = false;
+    _finalDelivered = false;
+  }
+
+  /// 最终结果只交付一次，避免 _onWsMessage 的 status==2 与 _finish 重复回调。
+  void _deliverFinal(String text) {
+    if (_finalDelivered) return;
+    _finalDelivered = true;
+    _lastText = text;
+    _onPartial?.call(text);
+    _onFinal?.call(text);
   }
 
   void _onAudioChunk(Uint8List bytes) {
@@ -282,11 +304,15 @@ class AgentXunfeiStt {
     final channel = _channel;
     if (channel == null || _endSent) return;
     _endSent = true;
-    channel.sink.add(
-      jsonEncode({
-        'data': <String, dynamic>{'status': 2},
-      }),
-    );
+    try {
+      channel.sink.add(
+        jsonEncode({
+          'data': <String, dynamic>{'status': 2},
+        }),
+      );
+    } catch (_) {
+      // 连接可能已关闭，忽略写入异常。
+    }
   }
 
   void _onWsMessage(dynamic message) {
@@ -305,6 +331,8 @@ class AgentXunfeiStt {
       if (kDebugMode) {
         debugPrint('AgentXunfeiStt error: $json');
       }
+      // 错误码代表本次识别失败：终止录音与连接，避免卡在“听写中”。
+      _finishFuture = _finish(cancel: true);
       return;
     }
 
@@ -326,12 +354,14 @@ class AgentXunfeiStt {
 
     final status = data['status'] as int? ?? 0;
     if (status == 2) {
+      // 服务端已返回最终结果并即将关闭连接：标记已结束，避免在已关闭的
+      // sink 上补发结束帧；最终结果统一通过 _deliverFinal 交付一次。
+      _serverEnded = true;
       final text = _segments.join().trim();
       if (text.isNotEmpty) {
-        _lastText = text;
-        _onPartial?.call(text);
-        _onFinal?.call(text);
+        _deliverFinal(text);
       }
+      _finishFuture = _finish(cancel: false);
     }
   }
 

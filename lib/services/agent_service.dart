@@ -436,11 +436,30 @@ class AgentService {
         for (final req in parsed) {
           final res = results[req.id];
           if (res == null) continue;
+          var toolRawResult = res.rawResult;
+
+          // web_search: 后端强制校验——用户没明确要求搜/查/找链接，则隐藏卡片
+          if (req.name == 'web_search') {
+            final lastUser = _lastUserMsg(apiMessages);
+            if (lastUser != null && !_wantsSearchResults(lastUser)) {
+              try {
+                final d = jsonDecode(toolRawResult);
+                if (d is Map) {
+                  final m = Map<String, dynamic>.from(d);
+                  if (m['show_card'] == true) {
+                    m['show_card'] = false;
+                    toolRawResult = jsonEncode(m);
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+
           if (req.name == 'open_post') openPostInvoked = true;
           if (_processToolResult(
             name: req.name,
             args: req.args,
-            rawResult: res.rawResult,
+            rawResult: toolRawResult,
             collectedBlocks: collectedBlocks,
             turnErrors: turnErrors,
           )) {
@@ -451,7 +470,7 @@ class AgentService {
           if (wantsOpenPost && !openPostInvoked) {
             Map<String, dynamic>? decodedResult;
             try {
-              final decoded = jsonDecode(res.rawResult);
+              final decoded = jsonDecode(toolRawResult);
               if (decoded is Map) {
                 decodedResult = Map<String, dynamic>.from(decoded);
               }
@@ -496,7 +515,7 @@ class AgentService {
           apiMessages.add({
             'role': 'tool',
             'tool_call_id': req.id,
-            'content': res.rawResult,
+            'content': toolRawResult,
           });
         }
         if (hadRetryableError && toolRetries < maxToolRetries) {
@@ -959,6 +978,26 @@ class AgentService {
       r'^(open_|navigate_|set_|sign_|follow_|unfollow_|reply_|send_|post_)',
     ).hasMatch(toolName);
   }
+
+  /// 用户是否明确要求展示搜索结果（搜/查/找 + 链接/来源/新闻）。不满足则后端强制隐藏卡片。
+  static final _searchIntentRe = RegExp(
+    r'(?:帮我?|给我|替我|来)?(?:查一下|查查|查一查|搜一下|搜搜|搜一搜|搜|搜索|找找|找一下)'
+    r'|(?:有什么|有没有).*(?:新闻|新消息|新动态|链接|来源|资料|原文)'
+    r'|(?:最近|最新).*(?:新闻|动态|消息)'
+    r'|(?:帮我|给我).*(?:查|搜|找)'
+    r'|(?:看看|想看|要看).*(?:原文|原始|来源|链接|资料)'
+    r'|(?:链接|来源).*(?:发|给|看|提供)',
+    caseSensitive: false,
+  );
+
+  static String? _lastUserMsg(List<Map<String, dynamic>> msgs) {
+    for (var i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i]['role'] == 'user') return msgs[i]['content']?.toString() ?? '';
+    }
+    return null;
+  }
+
+  static bool _wantsSearchResults(String msg) => _searchIntentRe.hasMatch(msg);
 
   static String _friendlyApiError(String? msg, int statusCode) {
     final text = (msg ?? '').toLowerCase();

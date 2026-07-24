@@ -442,7 +442,9 @@ class MainScaffold extends StatefulWidget {
   State<MainScaffold> createState() => _MainScaffoldState();
 }
 
-class _MainScaffoldState extends State<MainScaffold> {
+class _MainScaffoldState extends State<MainScaffold>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _navBarCtrl;
   int _currentIndex = 0;
   final _tabIndexNotifier = ValueNotifier<int>(0);
   int _loginKey = 0;
@@ -476,6 +478,12 @@ class _MainScaffoldState extends State<MainScaffold> {
   @override
   void initState() {
     super.initState();
+    _navBarCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: 1.0, // 初始可见
+    );
+    AppShellController.hideBottomNav.addListener(_onHideNavChanged);
     _homePages = [_homeFeedPage()];
     _homeTab = _buildHomeNavigator();
     AppShellController.instance.onOpenPostInHome = _openPostInHome;
@@ -526,6 +534,8 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   @override
   void dispose() {
+    AppShellController.hideBottomNav.removeListener(_onHideNavChanged);
+    _navBarCtrl.dispose();
     _debouncedTabRefresh.dispose();
     _companionSyncTimer?.cancel();
     _navAnimEndTimer?.cancel();
@@ -702,6 +712,14 @@ class _MainScaffoldState extends State<MainScaffold> {
     if (_companionLinked) return;
     _companionLinked = true;
     _syncCompanion();
+  }
+
+  void _onHideNavChanged() {
+    if (AppShellController.hideBottomNav.value) {
+      _navBarCtrl.reverse();
+    } else {
+      _navBarCtrl.forward();
+    }
   }
 
   void _onShellCommand() {
@@ -925,11 +943,22 @@ class _MainScaffoldState extends State<MainScaffold> {
                     ],
                   ),
                 ),
-                bottomNavigationBar: ValueListenableBuilder<bool>(
-                  valueListenable: AppShellController.hideBottomNav,
-                  builder: (context, hideNav, _) {
-                    if (hideNav) return const SizedBox.shrink();
-                    return RepaintBoundary(
+                bottomNavigationBar: RepaintBoundary(
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 1),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: _navBarCtrl,
+                      curve: Curves.easeOutCubic,
+                      reverseCurve: Curves.easeInCubic,
+                    )),
+                    child: FadeTransition(
+                      opacity: CurvedAnimation(
+                        parent: _navBarCtrl,
+                        curve: Curves.easeOut,
+                        reverseCurve: Curves.easeIn,
+                      ),
                       child: ValueListenableBuilder<int>(
                         valueListenable:
                             MessageNotificationService.instance.unreadBadge,
@@ -965,8 +994,8 @@ class _MainScaffoldState extends State<MainScaffold> {
                           );
                         },
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
               );
             },

@@ -105,8 +105,9 @@ class BaiduQrLoginService {
         return LoginPollResult(status: PollStatus.error);
       }
       final channelMatch = RegExp(r'"channel_v":"(.*)"}\)').firstMatch(text);
-      if (channelMatch == null)
+      if (channelMatch == null) {
         return LoginPollResult(status: PollStatus.error);
+      }
       final raw = channelMatch
           .group(1)!
           .replaceAll(r'\"', '"')

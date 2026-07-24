@@ -14,12 +14,12 @@ abstract final class AppDecorations {
   static BorderRadius get borderRadiusXl => BorderRadius.circular(radiusXl);
   static BorderRadius get borderRadiusPill => BorderRadius.circular(radiusPill);
 
-  static List<BoxShadow> softShadow(AppColorScheme colors, {double blur = 12}) {
+  static List<BoxShadow> softShadow(AppColorScheme colors, {double blur = 8}) {
     return [
       BoxShadow(
         color: colors.shadow,
         blurRadius: blur,
-        offset: const Offset(0, 2),
+        offset: const Offset(0, 1),
       ),
     ];
   }

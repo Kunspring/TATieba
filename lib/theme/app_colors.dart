@@ -15,7 +15,7 @@ class AppColors {
   static const borderLight = Color(0xFFEEEEEE);
   static const textPrimary = Color(0xFF000000);
   static const textSecondary = Color(0xFF666666);
-  static const textMuted = Color(0xFF999999);
+  static const textMuted = Color(0xFF777777);
   static const divider = Color(0xFFE0E0E0);
   static const shadow = Color.fromRGBO(0, 0, 0, 0.06);
   static const navSelected = Color(0xFF000000);
@@ -45,7 +45,7 @@ class AppColors {
   static const darkBorderLight = Color(0xFF444444);
   static const darkTextPrimary = Color(0xFFFFFFFF);
   static const darkTextSecondary = Color(0xFFBBBBBB);
-  static const darkTextMuted = Color(0xFF888888);
+  static const darkTextMuted = Color(0xFF999999);
   static const darkDivider = Color(0xFF1F1F1F);
   static const darkShadow = Color.fromRGBO(0, 0, 0, 0.4);
   static const darkNavUnselected = Color(0xFF888888);

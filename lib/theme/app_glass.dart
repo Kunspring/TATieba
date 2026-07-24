@@ -387,7 +387,7 @@ BoxDecoration _glassTabIndicator(AppColorScheme colors) {
     boxShadow: [
       BoxShadow(
         color: colors.shadow,
-        blurRadius: 8,
+        blurRadius: 4,
         offset: const Offset(0, 1),
       ),
     ],
@@ -674,7 +674,7 @@ class GlassCard extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           borderRadius: radius,
-          boxShadow: AppDecorations.softShadow(colors, blur: 14),
+          boxShadow: AppDecorations.softShadow(colors, blur: 8),
         ),
         child: content,
       ),
@@ -718,19 +718,14 @@ class GlassBottomNav extends StatelessWidget {
                 if (isLight) ...[
                   BoxShadow(
                     color: colors.shadow,
-                    blurRadius: 22,
-                    offset: const Offset(0, 8),
-                  ),
-                  BoxShadow(
-                    color: const Color.fromRGBO(0, 0, 0, 0.04),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
                   ),
                 ] else ...[
                   BoxShadow(
                     color: colors.shadow,
-                    blurRadius: 12,
-                    offset: const Offset(0, -2),
+                    blurRadius: 4,
+                    offset: const Offset(0, -1),
                   ),
                 ],
               ],

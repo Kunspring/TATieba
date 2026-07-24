@@ -4,6 +4,7 @@ import '../models/tieba_post.dart';
 import '../models/bar_forum_context.dart';
 import 'sign_in_progress_service.dart';
 import 'tieba_client.dart';
+import 'tieba_message_service.dart';
 
 /// 本地已缓存的账号摘要，用于首屏免闪烁展示。
 class TiebaAccountLocalSnapshot {
@@ -154,6 +155,10 @@ class TiebaAccountService {
   }
 
   static Future<void> unbind() async {
+    // 先断开 WS 连接，避免残留已认证的连接
+    try {
+      await TiebaMessageService.disposeConnection();
+    } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_bdussKey);
     await prefs.remove(_stokenKey);

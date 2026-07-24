@@ -15,6 +15,7 @@ class KaomojiLoader extends StatefulWidget {
 class _KaomojiLoaderState extends State<KaomojiLoader>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _ctrl;
+  final _startedAt = DateTime.now();
 
   @override
   void initState() {
@@ -22,7 +23,7 @@ class _KaomojiLoaderState extends State<KaomojiLoader>
     WidgetsBinding.instance.addObserver(this);
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 6000),
     )..repeat();
   }
 
@@ -53,7 +54,10 @@ class _KaomojiLoaderState extends State<KaomojiLoader>
             size: Size(widget.size, widget.size),
             isComplex: true,
             willChange: true,
-            painter: _KaomojiPainter(progress: _ctrl.value, color: color),
+            painter: _LissajousPainter(
+              elapsed: DateTime.now().difference(_startedAt),
+              color: color,
+            ),
           );
         },
       ),
@@ -61,23 +65,47 @@ class _KaomojiLoaderState extends State<KaomojiLoader>
   }
 }
 
-class _KaomojiPainter extends CustomPainter {
-  _KaomojiPainter({required this.progress, required this.color});
+class _LissajousPainter extends CustomPainter {
+  _LissajousPainter({required this.elapsed, required this.color});
 
-  final double progress;
+  final Duration elapsed;
   final Color color;
 
-  static const _eyeTopY = 34.0;
-  static const _eyeMidY = 46.0;
-  static const _eyeBotY = 58.0;
-  static const _eyeOuterX = 18.0;
-  static const _eyeInnerX = 38.0;
-  static const _mouthY = 68.0;
-  static const _mouthHalf = 14.0;
-  static const _dotBaseY = 82.0;
-  static const _dotMaxRise = 9.0;
-  static const _dotRadius = 3.5;
-  static const _dotSpacing = 12.0;
+  static const _durationMs = 6000.0;
+  static const _pulseDurationMs = 5400.0;
+  static const _particleCount = 28;
+  static const _trailSpan = 0.38;
+  static const _amp = 24.0;
+  static const _ampBoost = 6.0;
+  static const _ax = 3.0;
+  static const _by = 4.0;
+  static const _phase = 1.57;
+  static const _yScale = 0.92;
+  static const _strokeWidth = 3.2;
+
+  double get _detailScale {
+    final ms = elapsed.inMilliseconds.toDouble();
+    final pulseProgress = (ms % _pulseDurationMs) / _pulseDurationMs;
+    final pulseAngle = pulseProgress * math.pi * 2;
+    return 0.52 + ((math.sin(pulseAngle + 0.55) + 1) / 2) * 0.48;
+  }
+
+  double get _progress {
+    final ms = elapsed.inMilliseconds.toDouble();
+    return (ms % _durationMs) / _durationMs;
+  }
+
+  static double _normalize(double x) => ((x % 1.0) + 1.0) % 1.0;
+
+  Offset _point(double progress) {
+    final ds = _detailScale;
+    final t = progress * math.pi * 2;
+    final amp = _amp + ds * _ampBoost;
+    return Offset(
+      50 + math.sin(_ax * t + _phase) * amp,
+      50 + math.sin(_by * t) * (amp * _yScale),
+    );
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -85,87 +113,47 @@ class _KaomojiPainter extends CustomPainter {
     canvas.save();
     canvas.scale(scale, scale);
 
-    final t = progress;
-
-    // --- face breathing scale ---
-    final breathe = 1.0 + math.sin(t * 2 * math.pi) * 0.015;
-    canvas.save();
-    canvas.translate(50, 50);
-    canvas.scale(breathe);
-    canvas.translate(-50, -50);
-
-    // --- eye squint: quick blink twice per cycle ---
-    final squintRaw = math.sin(t * 2 * math.pi * 2);
-    final squint = math.pow(squintRaw.clamp(0.0, 1.0), 3).toDouble();
-    // Left eye '>'
-    final lInnerX = _eyeInnerX - squint * 6;
-    final leftEye = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final leftPath = Path()
-      ..moveTo(_eyeOuterX, _eyeTopY)
-      ..lineTo(lInnerX, _eyeMidY)
-      ..lineTo(_eyeOuterX, _eyeBotY);
-    canvas.drawPath(leftPath, leftEye);
-
-    // Right eye '<'
-    final rInnerX = 100 - _eyeInnerX + squint * 6;
-    final rightEye = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.2
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    final rightPath = Path()
-      ..moveTo(100 - _eyeOuterX, _eyeTopY)
-      ..lineTo(rInnerX, _eyeMidY)
-      ..lineTo(100 - _eyeOuterX, _eyeBotY);
-    canvas.drawPath(rightPath, rightEye);
-
-    // --- mouth: subtle wobble ---
-    final mouthWobble = math.sin(t * 2 * math.pi + 1.2) * 1.2;
-    final mouthPaint = Paint()
-      ..color = color.withValues(alpha: 0.5 + squint * 0.15)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(
-      Offset(50 - _mouthHalf, _mouthY + mouthWobble),
-      Offset(50 + _mouthHalf, _mouthY + mouthWobble),
-      mouthPaint,
+    // --- faint background Lissajous path ---
+    final path = Path();
+    const steps = 200;
+    for (var i = 0; i <= steps; i++) {
+      final pt = _point(i / steps);
+      if (i == 0) {
+        path.moveTo(pt.dx, pt.dy);
+      } else {
+        path.lineTo(pt.dx, pt.dy);
+      }
+    }
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color.withValues(alpha: 0.1)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _strokeWidth
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round,
     );
 
-    canvas.restore(); // breathe scale
-
-    // --- bouncing dots ---
-    final centerX = 50.0;
-    for (var i = 0; i < 3; i++) {
-      final phase = i * 0.22;
-      final dotCycle = (t + phase) % 1.0;
-      // parabolic bounce: 0 → peak at 0.5 → back to 0
-      final rise = math.sin(dotCycle * math.pi);
-      final dotY = _dotBaseY - rise * _dotMaxRise;
-      // dot expands slightly at peak
-      final dotScale = 0.7 + rise * 0.3;
-      final dotAlpha = 0.35 + rise * 0.65;
-
-      final dotPaint = Paint()
-        ..color = color.withValues(alpha: dotAlpha)
-        ..style = PaintingStyle.fill;
+    // --- trailing particles ---
+    final progress = _progress;
+    for (var i = 0; i < _particleCount; i++) {
+      final tailOffset = i / (_particleCount - 1);
+      final p = _normalize(progress - tailOffset * _trailSpan);
+      final pt = _point(p);
+      final fade = math.pow(1 - tailOffset, 0.56);
       canvas.drawCircle(
-        Offset(centerX + (i - 1) * _dotSpacing, dotY),
-        _dotRadius * dotScale,
-        dotPaint,
+        Offset(pt.dx, pt.dy),
+        0.9 + fade * 2.7,
+        Paint()
+          ..color = color.withValues(alpha: 0.04 + fade * 0.96)
+          ..style = PaintingStyle.fill,
       );
     }
 
-    canvas.restore(); // full scale
+    canvas.restore();
   }
 
   @override
-  bool shouldRepaint(_KaomojiPainter old) =>
-      old.progress != progress || old.color != color;
+  bool shouldRepaint(_LissajousPainter old) =>
+      old.elapsed != elapsed || old.color != color;
 }

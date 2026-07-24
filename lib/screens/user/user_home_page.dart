@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
 
@@ -413,13 +412,6 @@ class _UserHomePageState extends State<UserHomePage>
       );
     }
 
-    final profileExpandedHeight = _profile != null
-        ? _ProfileHeader.expandedHeightFor(
-            _profile!,
-            showActions: _showProfileActions,
-          )
-        : _ProfileHeaderPreview.expandedHeight;
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
@@ -433,98 +425,73 @@ class _UserHomePageState extends State<UserHomePage>
           overflow: TextOverflow.ellipsis,
         ),
       ),
-      body: NestedScrollView(
-        floatHeaderSlivers: true,
-        headerSliverBuilder: (context, innerBoxIsScrolled) {
-          final handle = NestedScrollView.sliverOverlapAbsorberHandleFor(
-            context,
-          );
-          return [
-            SliverOverlapAbsorber(
-              handle: handle,
-              sliver: SliverMainAxisGroup(
-                slivers: [
-                  SliverToBoxAdapter(child: SizedBox(height: topInset + 8)),
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _CollapsingProfileHeaderDelegate(
-                      maxExtent: profileExpandedHeight,
-                      minExtent: _ProfileHeader.collapsedHeight,
-                      childBuilder: (progress) => Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 220),
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          child: _profile != null
-                              ? _ProfileHeader(
-                                  key: ValueKey(_profile!.portrait),
-                                  profile: _profile!,
-                                  loadingLevels: _loadingLevels,
-                                  collapseProgress: progress,
-                                  showActions: _showProfileActions,
-                                  privateMessageLoading: _openingPrivateMessage,
-                                  followLoading: _followLoading,
-                                  onPrivateMessage: () =>
-                                      _openPrivateMessage(_profile!),
-                                  onToggleFollow: () =>
-                                      _toggleUserFollow(_profile!),
-                                )
-                              : _ProfileHeaderPreview(
-                                  key: const ValueKey('user-home-preview'),
-                                  avatarUrl: _previewAvatarUrl,
-                                  displayName: _previewName,
-                                  loading: _loadingProfile,
-                                  collapseProgress: progress,
-                                ),
-                        ),
-                      ),
+      body: Column(
+        children: [
+          SizedBox(height: topInset + 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              child: _profile != null
+                  ? _ProfileHeader(
+                      key: ValueKey(_profile!.portrait),
+                      profile: _profile!,
+                      loadingLevels: _loadingLevels,
+                      showActions: _showProfileActions,
+                      privateMessageLoading: _openingPrivateMessage,
+                      followLoading: _followLoading,
+                      onPrivateMessage: () =>
+                          _openPrivateMessage(_profile!),
+                      onToggleFollow: () =>
+                          _toggleUserFollow(_profile!),
+                    )
+                  : _ProfileHeaderPreview(
+                      key: const ValueKey('user-home-preview'),
+                      avatarUrl: _previewAvatarUrl,
+                      displayName: _previewName,
+                      loading: _loadingProfile,
                     ),
-                  ),
-                  SliverPersistentHeader(
-                    pinned: true,
-                    delegate: _StickyTabBarDelegate(
-                      tabBar: GlassTabBar(
-                        controller: _tabCtrl,
-                        tabs: const ['帖子', '关注的吧'],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ),
-          ];
-        },
-        body: TabBarView(
-          controller: _tabCtrl,
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
           ),
-          clipBehavior: Clip.hardEdge,
-          children: [
-            _UserPostListTab(
-              key: const ValueKey('user-home-tab-posts'),
-              portrait: _portrait,
-              userId: _profile?.userId,
-              userName: widget.userName ?? _profile?.userName,
-              ownerDisplayName: _profile?.displayName,
-              ownerAvatarUrl: _profile?.avatarUrl,
-              bduss: _bduss,
-              stoken: _stoken,
-              identityReady: _postListReady,
-              threadsOnly: true,
+          GlassTabBar(
+            controller: _tabCtrl,
+            tabs: const ['帖子', '关注的吧'],
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabCtrl,
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              clipBehavior: Clip.hardEdge,
+              children: [
+                _UserPostListTab(
+                  key: const ValueKey('user-home-tab-posts'),
+                  portrait: _portrait,
+                  userId: _profile?.userId,
+                  userName: widget.userName ?? _profile?.userName,
+                  ownerDisplayName: _profile?.displayName,
+                  ownerAvatarUrl: _profile?.avatarUrl,
+                  bduss: _bduss,
+                  stoken: _stoken,
+                  identityReady: _postListReady,
+                  threadsOnly: true,
+                ),
+                _UserForumListTab(
+                  key: const ValueKey('user-home-tab-forums'),
+                  portrait: _portrait,
+                  userId: _profile?.userId,
+                  userName: widget.userName ?? _profile?.userName,
+                  bduss: _bduss,
+                  stoken: _stoken,
+                  identityReady: _postListReady,
+                ),
+              ],
             ),
-            _UserForumListTab(
-              key: const ValueKey('user-home-tab-forums'),
-              portrait: _portrait,
-              userId: _profile?.userId,
-              userName: widget.userName ?? _profile?.userName,
-              bduss: _bduss,
-              stoken: _stoken,
-              identityReady: _postListReady,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -544,144 +511,23 @@ class _LevelFetch {
   });
 }
 
-class _CollapsingProfileHeaderDelegate extends SliverPersistentHeaderDelegate {
-  final double _maxExtent;
-  final double _minExtent;
-  final Widget Function(double collapseProgress) childBuilder;
-
-  _CollapsingProfileHeaderDelegate({
-    required double maxExtent,
-    required double minExtent,
-    required this.childBuilder,
-  }) : _maxExtent = maxExtent,
-       _minExtent = minExtent;
-
-  @override
-  double get maxExtent => _maxExtent;
-
-  @override
-  double get minExtent => _minExtent;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    final range = maxExtent - minExtent;
-    final progress = range <= 0 ? 0.0 : (shrinkOffset / range).clamp(0.0, 1.0);
-    final height = (maxExtent - shrinkOffset).clamp(minExtent, maxExtent);
-
-    return SizedBox(
-      height: height,
-      child: ClipRect(
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: _QuantizedCollapseChild(
-            progress: progress,
-            builder: childBuilder,
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  bool shouldRebuild(covariant _CollapsingProfileHeaderDelegate oldDelegate) {
-    return oldDelegate._maxExtent != _maxExtent ||
-        oldDelegate._minExtent != _minExtent;
-  }
-}
-
-class _QuantizedCollapseChild extends StatefulWidget {
-  final double progress;
-  final Widget Function(double progress) builder;
-
-  const _QuantizedCollapseChild({
-    required this.progress,
-    required this.builder,
-  });
-
-  @override
-  State<_QuantizedCollapseChild> createState() =>
-      _QuantizedCollapseChildState();
-}
-
-class _QuantizedCollapseChildState extends State<_QuantizedCollapseChild> {
-  static const _steps = 24;
-  late double _displayProgress;
-
-  @override
-  void initState() {
-    super.initState();
-    _displayProgress = _quantize(widget.progress);
-  }
-
-  @override
-  void didUpdateWidget(covariant _QuantizedCollapseChild oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    final next = _quantize(widget.progress);
-    if (next != _displayProgress) {
-      setState(() => _displayProgress = next);
-    }
-  }
-
-  double _quantize(double value) =>
-      (value.clamp(0.0, 1.0) * _steps).round() / _steps;
-
-  @override
-  Widget build(BuildContext context) => widget.builder(_displayProgress);
-}
-
-class _StickyTabBarDelegate extends SliverPersistentHeaderDelegate {
-  final GlassTabBar tabBar;
-
-  _StickyTabBarDelegate({required this.tabBar});
-
-  @override
-  double get minExtent => tabBar.preferredSize.height + 8;
-
-  @override
-  double get maxExtent => minExtent;
-
-  @override
-  Widget build(
-    BuildContext context,
-    double shrinkOffset,
-    bool overlapsContent,
-  ) {
-    return ColoredBox(color: Colors.transparent, child: tabBar);
-  }
-
-  @override
-  bool shouldRebuild(covariant _StickyTabBarDelegate oldDelegate) {
-    return oldDelegate.tabBar != tabBar;
-  }
-}
 
 class _ProfileHeaderPreview extends StatelessWidget {
-  static const expandedHeight = 212.0;
-
   final String? avatarUrl;
   final String? displayName;
   final bool loading;
-  final double collapseProgress;
 
   const _ProfileHeaderPreview({
     super.key,
     this.avatarUrl,
     this.displayName,
     this.loading = false,
-    this.collapseProgress = 0,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
     final name = displayName?.trim();
-    final t = collapseProgress.clamp(0.0, 1.0);
-    final avatarRadius = lerpDouble(28, 18, t)!;
-    final detailOpacity = (1 - t * 0.4).clamp(0.0, 1.0);
 
     return GlassCard(
       child: Column(
@@ -693,7 +539,7 @@ class _ProfileHeaderPreview extends StatelessWidget {
             children: [
               UserAvatar(
                 imageUrl: avatarUrl,
-                radius: avatarRadius,
+                radius: 28,
                 name: name ?? '用户',
               ),
               const SizedBox(width: 16),
@@ -708,83 +554,55 @@ class _ProfileHeaderPreview extends StatelessWidget {
                             name?.isNotEmpty == true ? name! : '用户',
                             style: AppFonts.title(
                               color: colors.textPrimary,
-                            ).copyWith(fontSize: lerpDouble(17, 15, t)),
+                            ).copyWith(fontSize: 17),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (detailOpacity > 0.05) ...[
-                          Opacity(
-                            opacity: detailOpacity,
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 6),
-                              child: UserLevelBadges(
-                                scope: UserLevelBadgeScope.profile,
-                                loading: true,
-                                inline: true,
-                              ),
-                            ),
+                        const Padding(
+                          padding: EdgeInsets.only(left: 6),
+                          child: UserLevelBadges(
+                            scope: UserLevelBadgeScope.profile,
+                            loading: true,
+                            inline: true,
                           ),
-                        ],
+                        ),
                       ],
                     ),
-                    if (detailOpacity > 0.05) ...[
-                      Opacity(
-                        opacity: detailOpacity,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(height: 6),
-                            SkeletonLine(width: 88, colors: colors),
-                          ],
-                        ),
-                      ),
-                    ],
+                    const SizedBox(height: 6),
+                    SkeletonLine(width: 88, colors: colors),
                   ],
                 ),
               ),
-              if (loading && detailOpacity > 0.2)
-                Opacity(
-                  opacity: detailOpacity,
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: colors.primary.withValues(alpha: 0.7),
-                    ),
+              if (loading)
+                SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: colors.primary.withValues(alpha: 0.7),
                   ),
                 ),
             ],
           ),
-          if (detailOpacity > 0.05) ...[
-            Opacity(
-              opacity: detailOpacity,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 8),
-                  SkeletonLine(
-                    width: double.infinity,
-                    colors: colors,
-                    height: 10,
-                  ),
-                  const SizedBox(height: 16),
-                  Divider(height: 1, color: colors.divider),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _SkeletonStatCell(colors: colors),
-                      _StatDivider(colors: colors),
-                      _SkeletonStatCell(colors: colors),
-                      _StatDivider(colors: colors),
-                      _SkeletonStatCell(colors: colors),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+          const SizedBox(height: 8),
+          SkeletonLine(
+            width: double.infinity,
+            colors: colors,
+            height: 10,
+          ),
+          const SizedBox(height: 16),
+          Divider(height: 1, color: colors.divider),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _SkeletonStatCell(colors: colors),
+              _StatDivider(colors: colors),
+              _SkeletonStatCell(colors: colors),
+              _StatDivider(colors: colors),
+              _SkeletonStatCell(colors: colors),
+            ],
+          ),
         ],
       ),
     );
@@ -811,11 +629,8 @@ class _SkeletonStatCell extends StatelessWidget {
 }
 
 class _ProfileHeader extends StatelessWidget {
-  static const collapsedHeight = 76.0;
-
   final TiebaUserProfile profile;
   final bool loadingLevels;
-  final double collapseProgress;
   final bool showActions;
   final bool privateMessageLoading;
   final bool followLoading;
@@ -826,23 +641,12 @@ class _ProfileHeader extends StatelessWidget {
     super.key,
     required this.profile,
     this.loadingLevels = false,
-    this.collapseProgress = 0,
     this.showActions = false,
     this.privateMessageLoading = false,
     this.followLoading = false,
     this.onPrivateMessage,
     this.onToggleFollow,
   });
-
-  static double expandedHeightFor(
-    TiebaUserProfile profile, {
-    bool showActions = false,
-  }) {
-    var height = 224.0;
-    if (profile.intro?.trim().isNotEmpty == true) height += 34;
-    if (showActions) height += 52;
-    return height;
-  }
 
   String _formatCount(int count) {
     if (count <= 0) return '0';
@@ -853,10 +657,6 @@ class _ProfileHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
-    final t = collapseProgress.clamp(0.0, 1.0);
-    final avatarRadius = lerpDouble(28, 18, t)!;
-    final detailOpacity = (1 - t * 0.4).clamp(0.0, 1.0);
-    final statsOpacity = (1 - t * 1.1).clamp(0.0, 1.0);
     final hasIntro = profile.intro?.trim().isNotEmpty == true;
     final hasLevels = loadingLevels || profile.growthLevelLabel != null;
 
@@ -870,7 +670,7 @@ class _ProfileHeader extends StatelessWidget {
             children: [
               UserAvatar(
                 imageUrl: profile.avatarUrl,
-                radius: avatarRadius,
+                radius: 28,
                 name: profile.displayName,
               ),
               const SizedBox(width: 16),
@@ -886,169 +686,128 @@ class _ProfileHeader extends StatelessWidget {
                             profile.displayName,
                             style: AppFonts.title(
                               color: colors.textPrimary,
-                            ).copyWith(fontSize: lerpDouble(17, 15, t)),
+                            ).copyWith(fontSize: 17),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        if (hasLevels && detailOpacity > 0.05) ...[
-                          Opacity(
-                            opacity: detailOpacity,
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 6),
-                              child: UserLevelBadges(
-                                scope: UserLevelBadgeScope.profile,
-                                loading: loadingLevels,
-                                growthLevelLabel: profile.growthLevelLabel,
-                                inline: true,
-                              ),
+                        if (hasLevels)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: UserLevelBadges(
+                              scope: UserLevelBadgeScope.profile,
+                              loading: loadingLevels,
+                              growthLevelLabel: profile.growthLevelLabel,
+                              inline: true,
+                            ),
+                          ),
+                        if (profile.isVip)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Icon(
+                              Icons.verified_rounded,
+                              size: 16,
+                              color: colors.primary,
+                            ),
+                          ),
+                      ],
+                    ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (profile.userName.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            '@${profile.userName}',
+                            style: AppFonts.caption(
+                              color: colors.textMuted,
                             ),
                           ),
                         ],
-                        if (profile.isVip && detailOpacity > 0.2) ...[
-                          Opacity(
-                            opacity: detailOpacity,
-                            child: Padding(
-                              padding: const EdgeInsets.only(left: 4),
-                              child: Icon(
-                                Icons.verified_rounded,
-                                size: 16,
-                                color: colors.primary,
-                              ),
+                        if (profile.forumAgeLabel != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            profile.forumAgeLabel!,
+                            style: AppFonts.caption(
+                              color: colors.textSecondary,
                             ),
                           ),
                         ],
                       ],
                     ),
-                    if (detailOpacity > 0.05) ...[
-                      Opacity(
-                        opacity: detailOpacity,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (profile.userName.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                '@${profile.userName}',
-                                style: AppFonts.caption(
-                                  color: colors.textMuted,
-                                ),
-                              ),
-                            ],
-                            if (profile.forumAgeLabel != null) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                profile.forumAgeLabel!,
-                                style: AppFonts.caption(
-                                  color: colors.textSecondary,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
-              if (t > 0.55)
-                _CompactStats(
-                  postCount: _formatCount(profile.postCount),
-                  fanCount: _formatCount(profile.fanCount),
-                  colors: colors,
-                  opacity: ((t - 0.55) / 0.45).clamp(0.0, 1.0),
-                ),
             ],
           ),
-          if (hasIntro && detailOpacity > 0.05) ...[
-            Opacity(
-              opacity: detailOpacity,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          if (hasIntro) ...[
+            const SizedBox(height: 14),
+            Text(
+              profile.intro!.trim(),
+              style: AppFonts.bodySmall(color: colors.textSecondary),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          if (showActions) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Row(
                 children: [
-                  const SizedBox(height: 14),
-                  Text(
-                    profile.intro!.trim(),
-                    style: AppFonts.bodySmall(color: colors.textSecondary),
-                    maxLines: t > 0.35 ? 1 : 3,
-                    overflow: TextOverflow.ellipsis,
+                  Expanded(
+                    child: _ProfileActionButton(
+                      colors: colors,
+                      label: '私信',
+                      icon: Icons.mail_outline_rounded,
+                      loading: privateMessageLoading,
+                      enabled:
+                          onPrivateMessage != null && !privateMessageLoading,
+                      filled: false,
+                      onTap: onPrivateMessage,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ProfileActionButton(
+                      colors: colors,
+                      label: profile.isFollowedByMe == true ? '已关注' : '关注',
+                      icon: profile.isFollowedByMe == true
+                          ? Icons.person_rounded
+                          : Icons.person_add_outlined,
+                      loading: followLoading,
+                      enabled: onToggleFollow != null && !followLoading,
+                      filled: profile.isFollowedByMe != true,
+                      onTap: onToggleFollow,
+                    ),
                   ),
                 ],
               ),
             ),
           ],
-          if (showActions && detailOpacity > 0.05) ...[
-            Opacity(
-              opacity: detailOpacity,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 14),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _ProfileActionButton(
-                        colors: colors,
-                        label: '私信',
-                        icon: Icons.mail_outline_rounded,
-                        loading: privateMessageLoading,
-                        enabled:
-                            onPrivateMessage != null && !privateMessageLoading,
-                        filled: false,
-                        onTap: onPrivateMessage,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _ProfileActionButton(
-                        colors: colors,
-                        label: profile.isFollowedByMe == true ? '已关注' : '关注',
-                        icon: profile.isFollowedByMe == true
-                            ? Icons.person_rounded
-                            : Icons.person_add_outlined,
-                        loading: followLoading,
-                        enabled: onToggleFollow != null && !followLoading,
-                        filled: profile.isFollowedByMe != true,
-                        onTap: onToggleFollow,
-                      ),
-                    ),
-                  ],
-                ),
+          const SizedBox(height: 16),
+          Divider(height: 1, color: colors.divider),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _StatCell(
+                label: '发帖',
+                value: _formatCount(profile.postCount),
+                colors: colors,
               ),
-            ),
-          ],
-          if (statsOpacity > 0.05) ...[
-            Opacity(
-              opacity: statsOpacity,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 16),
-                  Divider(height: 1, color: colors.divider),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _StatCell(
-                        label: '发帖',
-                        value: _formatCount(profile.postCount),
-                        colors: colors,
-                      ),
-                      _StatDivider(colors: colors),
-                      _StatCell(
-                        label: '粉丝',
-                        value: _formatCount(profile.fanCount),
-                        colors: colors,
-                      ),
-                      _StatDivider(colors: colors),
-                      _StatCell(
-                        label: '关注',
-                        value: _formatCount(profile.followCount),
-                        colors: colors,
-                      ),
-                    ],
-                  ),
-                ],
+              _StatDivider(colors: colors),
+              _StatCell(
+                label: '粉丝',
+                value: _formatCount(profile.fanCount),
+                colors: colors,
               ),
-            ),
-          ],
+              _StatDivider(colors: colors),
+              _StatCell(
+                label: '关注',
+                value: _formatCount(profile.followCount),
+                colors: colors,
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1115,41 +874,6 @@ class _ProfileActionButton extends StatelessWidget {
   }
 }
 
-class _CompactStats extends StatelessWidget {
-  final String postCount;
-  final String fanCount;
-  final AppColorScheme colors;
-  final double opacity;
-
-  const _CompactStats({
-    required this.postCount,
-    required this.fanCount,
-    required this.colors,
-    required this.opacity,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Opacity(
-      opacity: opacity,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            postCount,
-            style: AppFonts.numeric(
-              color: colors.textPrimary,
-            ).copyWith(fontSize: 12, fontWeight: FontWeight.w600),
-          ),
-          Text(
-            '粉丝 $fanCount',
-            style: AppFonts.caption(color: colors.textMuted),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _StatDivider extends StatelessWidget {
   final AppColorScheme colors;
@@ -1409,16 +1133,12 @@ class _UserPostListTabState extends State<_UserPostListTab>
   Widget build(BuildContext context) {
     super.build(context);
     final bottomPad = MediaQuery.paddingOf(context).bottom + 24;
-    final overlapHandle = NestedScrollView.sliverOverlapAbsorberHandleFor(
-      context,
-    );
 
     if (_loading) {
       return CustomScrollView(
         key: PageStorageKey('user-home-loading-${widget.threadsOnly}'),
         physics: _scrollPhysics,
         slivers: [
-          SliverOverlapInjector(handle: overlapHandle),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPad),
             sliver: SliverList(
@@ -1440,7 +1160,6 @@ class _UserPostListTabState extends State<_UserPostListTab>
         key: PageStorageKey('user-home-empty-${widget.threadsOnly}'),
         physics: _scrollPhysics,
         slivers: [
-          SliverOverlapInjector(handle: overlapHandle),
           SliverFillRemaining(
             hasScrollBody: false,
             child: AppEmptyState(
@@ -1461,7 +1180,6 @@ class _UserPostListTabState extends State<_UserPostListTab>
         physics: _scrollPhysics,
         cacheExtent: 0,
         slivers: [
-          SliverOverlapInjector(handle: overlapHandle),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPad),
             sliver: SliverList(
@@ -1672,16 +1390,12 @@ class _UserForumListTabState extends State<_UserForumListTab>
     super.build(context);
     final colors = context.appColors;
     final bottomPad = MediaQuery.paddingOf(context).bottom + 24;
-    final overlapHandle = NestedScrollView.sliverOverlapAbsorberHandleFor(
-      context,
-    );
 
     if (_loading) {
       return CustomScrollView(
         key: const PageStorageKey('user-home-forums-loading'),
         physics: _scrollPhysics,
         slivers: [
-          SliverOverlapInjector(handle: overlapHandle),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPad),
             sliver: SliverList(
@@ -1703,7 +1417,6 @@ class _UserForumListTabState extends State<_UserForumListTab>
         key: const PageStorageKey('user-home-forums-empty'),
         physics: _scrollPhysics,
         slivers: [
-          SliverOverlapInjector(handle: overlapHandle),
           SliverFillRemaining(
             hasScrollBody: false,
             child: AppEmptyState(
@@ -1726,7 +1439,6 @@ class _UserForumListTabState extends State<_UserForumListTab>
         physics: _scrollPhysics,
         cacheExtent: 0,
         slivers: [
-          SliverOverlapInjector(handle: overlapHandle),
           SliverPadding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, bottomPad),
             sliver: SliverList(

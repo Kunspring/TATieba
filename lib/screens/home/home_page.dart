@@ -67,7 +67,6 @@ class _HomePageState extends State<HomePage>
   List<TiebaPost> _posts = [];
   bool _loading = false;
   bool _hasMore = true;
-  bool _autoOpenFired = false;
   bool _isLoggedIn = false;
   int _barPage = 0;
   bool? _barFollowed;
@@ -235,8 +234,6 @@ class _HomePageState extends State<HomePage>
         _barPage = 0;
       }
     });
-
-    _maybeAutoOpen();
 
     if (shouldAutoLoad) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -492,34 +489,6 @@ class _HomePageState extends State<HomePage>
     };
   }
 
-  /// 冷启动自动打开首帖（仅触发一次）：让 App 默认进入"阅读帖子"而非推荐流列表。
-  void _maybeAutoOpen() {
-    if (_autoOpenFired || _posts.isEmpty) return;
-    _autoOpenFired = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      // 直接用嵌套 Navigator 的 context push：导航栏常驻、返回回推荐流，
-      // 不依赖外部 GlobalKey 的 currentState（时序不稳）。
-      Navigator.of(context).push(
-        uiPageRoute(
-          name: AppUiRouteNames.postDetail,
-          arguments: <String, dynamic>{
-            'tid': _posts.first.id,
-            if (_posts.first.title.isNotEmpty) 'title': _posts.first.title,
-            if (_posts.first.barName.isNotEmpty) 'bar_name': _posts.first.barName,
-            if (_posts.first.author.isNotEmpty) 'author': _posts.first.author,
-          },
-          builder: (_) => PostDetailPage(
-            post: _posts.first,
-            posts: _posts,
-            initialIndex: 0,
-            onLoadMore: _buildLoadMore(),
-          ),
-        ),
-      );
-    });
-  }
-
   Future<void> _loadPosts() async {
     final refreshing = _posts.isNotEmpty;
     if (_isSingleBar) {
@@ -550,7 +519,6 @@ class _HomePageState extends State<HomePage>
       _scheduleRecommendLevelEnrich();
       _persistSession();
       _scheduleScrollCheck();
-      _maybeAutoOpen();
     } catch (_) {
       if (!mounted) return;
       setState(() {

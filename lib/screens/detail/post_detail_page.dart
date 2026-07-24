@@ -8,7 +8,9 @@ import '../../models/tieba_post.dart';
 import '../../services/tieba_account_service.dart';
 import '../../services/tieba_client.dart';
 import '../../services/tieba_favorite_service.dart';
+import '../../services/app_shell_controller.dart';
 import '../../services/browse_distill_service.dart';
+import '../../services/browse_history_service.dart';
 import '../../services/app_ui_context.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_decorations.dart';
@@ -86,10 +88,15 @@ class _PostDetailPageState extends State<PostDetailPage> {
   late List<TiebaPost> _posts;
   bool _loadingMore = false;
   bool _hasMore = true;
+  final _replyCtrl = TextEditingController();
+  final _replyFocus = FocusNode();
+  bool _replySending = false;
+  final _replyRefreshNotifier = ValueNotifier<int>(0);
 
   @override
   void initState() {
     super.initState();
+    AppShellController.hideBottomNav.value = true;
     _currentIndex = widget.initialIndex;
     _posts = widget.posts != null ? List.from(widget.posts!) : [widget.post];
     _hasMore = widget.posts != null && widget.onLoadMore != null;
@@ -108,6 +115,10 @@ class _PostDetailPageState extends State<PostDetailPage> {
 
   @override
   void dispose() {
+    AppShellController.hideBottomNav.value = false;
+    _replyCtrl.dispose();
+    _replyFocus.dispose();
+    _replyRefreshNotifier.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -136,9 +147,149 @@ class _PostDetailPageState extends State<PostDetailPage> {
     if (mounted) setState(() => _loadingMore = false);
   }
 
+  Future<void> _submitReply() async {
+    final text = _replyCtrl.text.trim();
+    if (text.isEmpty || _replySending) return;
+
+    final bduss = await TiebaAccountService.getBduss();
+    if (bduss == null || bduss.isEmpty) {
+      if (mounted) {
+        showAppToast(context, '请先登录后再操作', type: AppToastType.warning);
+      }
+      return;
+    }
+
+    setState(() => _replySending = true);
+    _replyCtrl.clear();
+
+    try {
+      final post = _posts[_currentIndex];
+      final tbs = await TiebaAccountService.refreshTbs();
+      if (tbs.isEmpty) {
+        if (mounted) {
+          showAppToast(context, '登录状态失效', type: AppToastType.error);
+        }
+        return;
+      }
+      final result = await TiebaClient.replyPost(
+        tid: post.id,
+        content: text,
+        bduss: bduss,
+        tbs: tbs,
+        fname: post.barName,
+      );
+      final errorCode = result['error_code'];
+      if (errorCode != null && errorCode != 0) {
+        final errorMsg = result['error_msg']?.toString() ?? '回复失败';
+        if (mounted) {
+          showAppToast(context, errorMsg, type: AppToastType.error);
+        }
+      } else {
+        if (mounted) {
+          showAppToast(context, '回复成功', type: AppToastType.success);
+          _replyRefreshNotifier.value++;
+        }
+      }
+    } catch (_) {
+      if (mounted) {
+        showAppToast(context, '回复失败', type: AppToastType.error);
+      }
+    } finally {
+      if (mounted) setState(() => _replySending = false);
+    }
+  }
+
+  Widget _buildReplyBar(AppColorScheme colors) {
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 100),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: keyboardInset),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+          child: glassSurface(
+            colors: colors,
+            borderRadius: BorderRadius.circular(28),
+            strong: true,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _replyCtrl,
+                    focusNode: _replyFocus,
+                    enabled: !_replySending,
+                    minLines: 1,
+                    maxLines: 5,
+                    textAlignVertical: TextAlignVertical.center,
+                    textInputAction: TextInputAction.newline,
+                    style: AppFonts.body(color: colors.textPrimary).copyWith(
+                      height: 1.0,
+                      leadingDistribution: TextLeadingDistribution.even,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: '发表评论…',
+                      hintStyle:
+                          AppFonts.body(color: colors.textMuted).copyWith(
+                            height: 1.0,
+                            leadingDistribution: TextLeadingDistribution.even,
+                          ),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      filled: false,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 2,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                _replySending
+                    ? SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: colors.primary,
+                            ),
+                          ),
+                        ),
+                      )
+                    : ListenableBuilder(
+                        listenable: _replyCtrl,
+                        builder: (context, _) {
+                          final canSend =
+                              _replyCtrl.text.trim().isNotEmpty;
+                          return _CapsuleSendButton(
+                            colors: colors,
+                            enabled: canSend,
+                            onSend: _submitReply,
+                          );
+                        },
+                      ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.appColors;
+
     final post = _posts[math.min(_currentIndex, _posts.length - 1)];
 
     return Scaffold(
@@ -151,37 +302,52 @@ class _PostDetailPageState extends State<PostDetailPage> {
           style: AppFonts.title(color: colors.textPrimary),
         ),
       ),
-      body: _posts.length > 1
-          ? PostDetailScrollCoordinator(
-              delegate: _scrollDelegate,
-              child: PageView.builder(
-                controller: _pageController,
-                physics: CoordinatedPageScrollPhysics(
-                  delegate: _scrollDelegate,
-                ),
-                itemCount: _posts.length + (_hasMore ? 1 : 0),
-                onPageChanged: _onPageChanged,
-                itemBuilder: (_, i) {
-                  if (i == _posts.length) {
-                    return const AppLoadingPage(message: '加载中…');
-                  }
-                  return _PostDetailBody(
-                    post: _posts[i],
-                    key: ValueKey(_posts[i].id),
-                    isActivePage: i == _currentIndex,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _posts.length > 1
+                ? PostDetailScrollCoordinator(
+                    delegate: _scrollDelegate,
+                    child: PageView.builder(
+                      controller: _pageController,
+                      physics: CoordinatedPageScrollPhysics(
+                        delegate: _scrollDelegate,
+                      ),
+                      allowImplicitScrolling: true,
+                      itemCount: _posts.length + (_hasMore ? 1 : 0),
+                      onPageChanged: _onPageChanged,
+                      itemBuilder: (_, i) {
+                        if (i == _posts.length) {
+                          return const AppLoadingPage(message: '加载中…');
+                        }
+                        return _PostDetailBody(
+                          post: _posts[i],
+                          key: ValueKey(_posts[i].id),
+                          isActivePage: i == _currentIndex,
+                          replyRefreshNotifier: _replyRefreshNotifier,
+                          onFavoriteChanged: () {
+                            if (mounted) setState(() {});
+                          },
+                        );
+                      },
+                    ),
+                  )
+                : _PostDetailBody(
+                    post: widget.post,
+                    replyRefreshNotifier: _replyRefreshNotifier,
                     onFavoriteChanged: () {
                       if (mounted) setState(() {});
                     },
-                  );
-                },
-              ),
-            )
-          : _PostDetailBody(
-              post: widget.post,
-              onFavoriteChanged: () {
-                if (mounted) setState(() {});
-              },
-            ),
+                  ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _buildReplyBar(colors),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -189,12 +355,14 @@ class _PostDetailPageState extends State<PostDetailPage> {
 class _PostDetailBody extends StatefulWidget {
   final TiebaPost post;
   final bool isActivePage;
+  final ValueNotifier<int>? replyRefreshNotifier;
   final VoidCallback? onFavoriteChanged;
 
   const _PostDetailBody({
     super.key,
     required this.post,
     this.isActivePage = true,
+    this.replyRefreshNotifier,
     this.onFavoriteChanged,
   });
 
@@ -204,6 +372,7 @@ class _PostDetailBody extends StatefulWidget {
 
 class _PostDetailBodyState extends State<_PostDetailBody>
     with AutomaticKeepAliveClientMixin {
+  static const _floatingBarPad = 72.0;
   bool _postLiking = false;
   OverlayEntry? _likeEffectOverlay;
   final _scrollController = ScrollController();
@@ -229,6 +398,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
   bool _pullTargetAddFavorite = false;
   bool _pinnedBookmarkInstant = false;
   bool _pullFromUserDrag = false;
+  VoidCallback? _replyRefreshListener;
 
   TiebaPost get _favoritePost => _detail?.post ?? widget.post;
 
@@ -341,6 +511,8 @@ class _PostDetailBodyState extends State<_PostDetailBody>
     _syncUiForeground();
     _loadDetail();
     _scrollLoadTrigger.attach(_scrollController);
+    _replyRefreshListener = () => _loadDetail();
+    widget.replyRefreshNotifier?.addListener(_replyRefreshListener!);
   }
 
   void _syncUiForeground() {
@@ -356,6 +528,9 @@ class _PostDetailBodyState extends State<_PostDetailBody>
 
   @override
   void dispose() {
+    if (_replyRefreshListener != null) {
+      widget.replyRefreshNotifier?.removeListener(_replyRefreshListener!);
+    }
     _scrollDelegate?.detachVertical(_scrollController);
     _loadingMoreNotifier.dispose();
     _fontScaleNotifier.dispose();
@@ -425,6 +600,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
           _loadAuthorLevels(detail.post);
         }
         BrowseDistillService.instance.recordDetail(detail);
+        unawaited(BrowseHistoryService.instance.recordView(detail.post));
         _syncUiForeground();
       } else {
         setState(() {
@@ -765,6 +941,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
         name: AppUiRouteNames.imageViewer,
         arguments: {'url': url},
         builder: (_) => ImageViewerPage(imageUrl: url),
+        fullscreenDialog: true,
       ),
     );
   }
@@ -965,7 +1142,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
           ],
           SliverPadding(
             padding: EdgeInsets.only(
-              bottom: MediaQuery.paddingOf(context).bottom + 16,
+              bottom: MediaQuery.paddingOf(context).bottom + _floatingBarPad,
             ),
           ),
         ],
@@ -1014,8 +1191,8 @@ class _PostDetailBodyState extends State<_PostDetailBody>
                 boxShadow: [
                   BoxShadow(
                     color: colors.shadow,
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
                 ],
               ),
@@ -1216,7 +1393,12 @@ class _CommentTileState extends State<_CommentTile> {
 
   Future<void> _handleLike() async {
     if (_liking) return;
-    setState(() => _liking = true);
+    setState(() {
+      _isLiked = !_isLiked;
+      _likes += _isLiked ? 1 : -1;
+      if (_likes < 0) _likes = 0;
+      _liking = true;
+    });
     await widget.onLike();
     if (!mounted) return;
     setState(() {
@@ -1279,15 +1461,18 @@ class _CommentTileState extends State<_CommentTile> {
             ],
           ),
           const SizedBox(height: 6),
-          _copyOnLongPress(
-            context,
-            sub.content,
-            CommentContentBody.build(
-              context: context,
-              content: sub.content,
-              baseStyle: AppFonts.bodySmall(color: colors.textPrimary),
-              onImageTap: widget.onImageTap,
-              fontScale: fontScale,
+          Padding(
+            padding: const EdgeInsets.only(left: 26),
+            child: _copyOnLongPress(
+              context,
+              sub.content,
+              CommentContentBody.build(
+                context: context,
+                content: sub.content,
+                baseStyle: AppFonts.bodySmall(color: colors.textPrimary),
+                onImageTap: widget.onImageTap,
+                fontScale: fontScale,
+              ),
             ),
           ),
         ],
@@ -1355,11 +1540,6 @@ class _CommentTileState extends State<_CommentTile> {
                         ),
                       ),
                     ),
-                    Text(
-                      formatRelativeTime(widget.comment.createdAt),
-                      style: s(AppFonts.label(color: colors.textMuted)),
-                    ),
-                    const SizedBox(width: 8),
                     _AnimatedLikeButton(
                       isLiked: _isLiked,
                       likes: _likes,
@@ -1387,28 +1567,34 @@ class _CommentTileState extends State<_CommentTile> {
                         fontScale: fontScale,
                       ),
                     ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Text(
+                            formatRelativeTime(widget.comment.createdAt),
+                            style: s(AppFonts.label(color: colors.textMuted)),
                           ),
-                          decoration: BoxDecoration(
-                            color: colors.borderLight.withValues(alpha: 0.3),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '#${widget.comment.floor}',
-                            style: s(
-                              AppFonts.numeric(
-                                color: colors.textMuted,
-                              ).copyWith(fontSize: 11),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: colors.borderLight.withValues(alpha: 0.3),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              '#${widget.comment.floor}',
+                              style: s(
+                                AppFonts.numeric(
+                                  color: colors.textMuted,
+                                ).copyWith(fontSize: 11),
+                              ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ),
                   ],
@@ -1418,7 +1604,7 @@ class _CommentTileState extends State<_CommentTile> {
                   widget.comment.subPostNumber >
                       widget.comment.subComments.length)
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 4, 0),
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
                   child: _SubCommentSurface(
                     colors: colors,
                     child: Column(
@@ -1530,11 +1716,11 @@ class _CommentFloorDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const SizedBox(height: 14),
+        const SizedBox(height: 8),
         Container(height: 1, color: colors.border.withValues(alpha: 0.9)),
         const SizedBox(height: 1),
         Container(
-          height: 6,
+          height: 4,
           color: colors.surfaceMuted.withValues(alpha: 0.28),
         ),
       ],
@@ -1656,6 +1842,7 @@ class _SubCommentsPageState extends State<SubCommentsPage> {
         name: AppUiRouteNames.imageViewer,
         arguments: {'url': url},
         builder: (_) => ImageViewerPage(imageUrl: url),
+        fullscreenDialog: true,
       ),
     );
   }
@@ -1896,7 +2083,12 @@ class _SubCommentLikeButtonState extends State<_SubCommentLikeButton> {
 
   Future<void> _handleToggle() async {
     if (_busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _isLiked = !_isLiked;
+      _likes += _isLiked ? 1 : -1;
+      if (_likes < 0) _likes = 0;
+      _busy = true;
+    });
     await widget.onToggle();
     if (!mounted) return;
     setState(() {
@@ -1981,15 +2173,15 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
           color: activeColor,
           fontFeatures: const [FontFeature.tabularFigures()],
         );
-    final countGap = widget.iconSize <= 18 ? 5.0 : 8.0;
-    final countSlotWidth = widget.iconSize <= 18 ? 34.0 : 44.0;
+    final countGap = widget.iconSize <= 18 ? 4.0 : 5.0;
+    final countSlotWidth = widget.iconSize <= 18 ? 26.0 : 32.0;
     final showCount = widget.likes > 0 || widget.showZeroCount;
 
     return InkWell(
         onTap: widget.busy ? null : _handleTap,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 2, 0, 2),
+          padding: const EdgeInsets.fromLTRB(0, 2, 0, 2),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2041,6 +2233,49 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
             ],
           ),
         ),
+    );
+  }
+}
+
+class _CapsuleSendButton extends StatelessWidget {
+  final AppColorScheme colors;
+  final bool enabled;
+  final VoidCallback onSend;
+
+  const _CapsuleSendButton({
+    required this.colors,
+    required this.enabled,
+    required this.onSend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = enabled
+        ? colors.primary
+        : (isDark ? const Color(0xFF3A3A3A) : const Color(0xFFD4D7DC));
+    final fg = enabled
+        ? (isDark ? colors.scaffold : Colors.white)
+        : colors.textMuted;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: enabled ? onSend : null,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Center(
+              child: Icon(Icons.arrow_upward_rounded, size: 20, color: fg),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

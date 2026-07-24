@@ -157,7 +157,7 @@ class _QrLoginPageState extends State<QrLoginPage> with WidgetsBindingObserver {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: AppDecorations.borderRadiusMd,
-            boxShadow: AppDecorations.softShadow(colors, blur: 20),
+            boxShadow: AppDecorations.softShadow(colors, blur: 8),
           ),
           child: ClipRRect(
             borderRadius: AppDecorations.borderRadiusSm,

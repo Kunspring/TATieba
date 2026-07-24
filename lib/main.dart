@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'theme/app_colors.dart';
 import 'theme/app_decorations.dart';
 import 'theme/app_fonts.dart';
@@ -21,6 +22,7 @@ import 'services/app_shell_controller.dart';
 import 'services/app_theme_service.dart';
 import 'services/app_ui_context.dart';
 import 'services/data_saver_service.dart';
+import 'services/device_id_service.dart';
 import 'services/browse_distill_service.dart';
 import 'services/agent_memory_service.dart';
 import 'services/agent_voice_service.dart';
@@ -37,9 +39,10 @@ import 'widgets/root_shell_host.dart';
 import 'widgets/app_error_page.dart';
 
 /// 诊断用掉帧记录器（性能排查期开启）。每 3 秒汇报一次窗口内：
-/// - buildSlow：主线程(build)超 16ms 的帧数 → 指向定时器/GC/解析等主线程尖峰
-/// - rasterSlow：raster 线程超 16ms 的帧数 → 指向图片纹理上传/模糊等 GPU 侧尖峰
+/// - buildSlow：主线程(build)超 8.3ms 的帧数 → 指向定时器/GC/解析等主线程尖峰
+/// - rasterSlow：raster 线程超 8.3ms 的帧数 → 指向图片纹理上传/模糊等 GPU 侧尖峰
 /// 跑 `flutter run --profile`，用一分钟，把控制台 [JANK] 行贴回即可定位。
+/// 120fps 下每帧预算约 8.33ms。
 const bool kTraceJank = true;
 
 void _installJankTracer() {
@@ -54,11 +57,11 @@ void _installJankTracer() {
       total++;
       final b = t.buildDuration.inMicroseconds;
       final r = t.rasterDuration.inMicroseconds;
-      if (b > 16000) {
+      if (b > 8333) {
         buildSlow++;
         if (b > buildMax) buildMax = b;
       }
-      if (r > 16000) {
+      if (r > 8333) {
         rasterSlow++;
         if (r > rasterMax) rasterMax = r;
       }
@@ -97,6 +100,14 @@ Future<void> main() async {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     _installJankTracer();
+
+    try {
+      await FlutterDisplayMode.setHighRefreshRate();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[DisplayMode] 设置高刷新率失败: $e');
+      }
+    }
     PaintingBinding.instance.imageCache.maximumSize =
         AppPerformance.imageCacheMaxEntries;
     PaintingBinding.instance.imageCache.maximumSizeBytes =
@@ -143,6 +154,7 @@ Future<void> _initDeferredPrefs() async {
   await BrowseDistillService.instance.loadPrefs();
   await AgentMemoryService.instance.loadPrefs();
   await AgentVoiceService.instance.loadPrefs();
+  await DeviceIdService.warmup();
 }
 
 /// 首帧后后台加载，不阻塞进入首页。
@@ -912,42 +924,48 @@ class _MainScaffoldState extends State<MainScaffold> {
                     ],
                   ),
                 ),
-                bottomNavigationBar: RepaintBoundary(
-                  child: ValueListenableBuilder<int>(
-                    valueListenable:
-                        MessageNotificationService.instance.unreadBadge,
-                    builder: (context, unread, _) {
-                      return ValueListenableBuilder<bool>(
-                        valueListenable: _navSnapNotifier,
-                        builder: (context, snapSelection, _) {
-                          return GlassBottomNav(
-                            selectedIndex: tabIndex,
-                            snapSelection: snapSelection,
-                            onDestinationSelected: _onTabSelected,
-                            items: [
-                              const GlassNavItem(
-                                icon: Icons.home_rounded,
-                                label: '首页',
-                              ),
-                              const GlassNavItem(
-                                icon: Icons.explore_rounded,
-                                label: '进吧',
-                              ),
-                              GlassNavItem(
-                                icon: Icons.chat_bubble_rounded,
-                                label: '消息',
-                                badgeCount: unread,
-                              ),
-                              const GlassNavItem(
-                                icon: Icons.person_rounded,
-                                label: '个人',
-                              ),
-                            ],
+                bottomNavigationBar: ValueListenableBuilder<bool>(
+                  valueListenable: AppShellController.hideBottomNav,
+                  builder: (context, hideNav, _) {
+                    if (hideNav) return const SizedBox.shrink();
+                    return RepaintBoundary(
+                      child: ValueListenableBuilder<int>(
+                        valueListenable:
+                            MessageNotificationService.instance.unreadBadge,
+                        builder: (context, unread, _) {
+                          return ValueListenableBuilder<bool>(
+                            valueListenable: _navSnapNotifier,
+                            builder: (context, snapSelection, _) {
+                              return GlassBottomNav(
+                                selectedIndex: tabIndex,
+                                snapSelection: snapSelection,
+                                onDestinationSelected: _onTabSelected,
+                                items: [
+                                  const GlassNavItem(
+                                    icon: Icons.home_rounded,
+                                    label: '首页',
+                                  ),
+                                  const GlassNavItem(
+                                    icon: Icons.explore_rounded,
+                                    label: '进吧',
+                                  ),
+                                  GlassNavItem(
+                                    icon: Icons.chat_bubble_rounded,
+                                    label: '消息',
+                                    badgeCount: unread,
+                                  ),
+                                  const GlassNavItem(
+                                    icon: Icons.person_rounded,
+                                    label: '个人',
+                                  ),
+                                ],
+                              );
+                            },
                           );
                         },
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                  },
                 ),
               );
             },

@@ -22,6 +22,7 @@ import '../widgets/user_level_badges.dart';
 import '../utils/app_resume_refresh.dart';
 import '../utils/open_user_home.dart';
 import 'agent_config_page.dart';
+import 'browse_history_page.dart';
 import 'favorites_page.dart';
 import 'home/forum_post_card.dart';
 import 'settings_page.dart';
@@ -335,6 +336,30 @@ class ProfilePageState extends State<ProfilePage>
                         uiPageRoute(
                           name: AppUiRouteNames.agentConfig,
                           builder: (_) => const AgentConfigPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  Divider(height: 1, color: colors.divider),
+                  ListTile(
+                    leading: Icon(
+                      Icons.history_rounded,
+                      color: colors.textPrimary,
+                      size: 22,
+                    ),
+                    title: Text(
+                      '浏览记录',
+                      style: AppFonts.body(color: colors.textPrimary),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      color: colors.textMuted,
+                    ),
+                    onTap: () {
+                      Navigator.of(context).push(
+                        uiPageRoute(
+                          name: AppUiRouteNames.browseHistory,
+                          builder: (_) => const BrowseHistoryPage(),
                         ),
                       );
                     },

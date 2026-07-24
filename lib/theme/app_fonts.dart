@@ -7,7 +7,7 @@ abstract final class AppFonts {
   static const double letterSpacingEnglish = -0.2;
   static const double lineHeightTight = 1.3;
   static const double lineHeightNormal = 1.5;
-  static const double lineHeightRelaxed = 1.7;
+  static const double lineHeightRelaxed = 1.55;
 
   static TextStyle _withDefaults({
     double fontSize = 14,

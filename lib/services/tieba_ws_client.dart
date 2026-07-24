@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HttpClient, WebSocket, CompressionOptions;
 import 'dart:math';
 import 'dart:typed_data';
 
@@ -14,6 +15,7 @@ import 'tieba_ws_crypto.dart';
 /// 贴吧 IM WebSocket 短连接客户端（init + 拉取私信）。
 class TiebaWsClient {
   static const _clientVersion = '12.64.1.1';
+  static const _wsWssUrl = 'wss://im.tieba.baidu.com:8000';
   static const _wsUrl = 'ws://im.tieba.baidu.com:8000';
 
   WebSocketChannel? _channel;
@@ -24,21 +26,32 @@ class TiebaWsClient {
   int _reqId = 0;
   String? _cuid;
 
-  Future<List<TiebaWsGroupInfo>> connect({
-    required String bduss,
-    required String stoken,
-  }) async {
-    _secKey = TiebaWsCrypto.randomAesSecKey();
-    _aesKey = TiebaWsCrypto.deriveAesKey(_secKey);
-    _reqId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  static final HttpClient _wssClient = HttpClient()
+    ..badCertificateCallback = (_, host, port) => host == 'im.tieba.baidu.com';
+  static final HttpClient _wsClient = HttpClient();
 
-    final cuidGalaxy2 = await DeviceIdService.getCuidGalaxy2();
-    _cuid = 'baidutiebaapp${const Uuid().v4()}';
-
-    _channel = IOWebSocketChannel.connect(
-      _wsUrl,
-      headers: const {'Sec-WebSocket-Extensions': 'im_version=2.3'},
+  Future<void> _connectWs(String url) async {
+    final uri = Uri.parse(url);
+    final client = uri.scheme == 'wss' ? _wssClient : _wsClient;
+    final req = await client.openUrl('GET', uri);
+    req.headers.add('Host', 'im.tieba.baidu.com:8000');
+    req.headers.add('User-Agent', 'bdtb for Android 12.64.1.1');
+    req.headers.add('Sec-WebSocket-Extensions', 'im_version=2.3');
+    req.headers.add('Connection', 'Upgrade');
+    req.headers.add('Upgrade', 'websocket');
+    req.headers.add('Sec-WebSocket-Version', '13');
+    req.headers.add('Sec-WebSocket-Key', _wsKey());
+    final resp = await req.close();
+    if (resp.statusCode != 101) {
+      throw Exception('WS upgrade rejected: ${resp.statusCode}');
+    }
+    final socket = await resp.detachSocket();
+    final ws = WebSocket.fromUpgradedSocket(
+      socket,
+      serverSide: false,
+      compression: CompressionOptions.compressionDefault,
     );
+    _channel = IOWebSocketChannel(ws);
     _sub = _channel!.stream.listen(
       _onFrame,
       onError: (Object e, StackTrace st) {
@@ -56,6 +69,38 @@ class TiebaWsClient {
         _waiters.clear();
       },
     );
+  }
+
+  static String _wsKey() {
+    final rng = Random.secure();
+    final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
+    return base64Encode(bytes);
+  }
+
+  Future<List<TiebaWsGroupInfo>> connect({
+    required String bduss,
+    required String stoken,
+  }) async {
+    _secKey = TiebaWsCrypto.randomAesSecKey();
+    _aesKey = TiebaWsCrypto.deriveAesKey(_secKey);
+    _reqId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+    var cuidGalaxy2 = DeviceIdService.getCuidGalaxy2Cached();
+    if (cuidGalaxy2.isEmpty) {
+      cuidGalaxy2 = await DeviceIdService.getCuidGalaxy2();
+    }
+    _cuid = DeviceIdService.getWsCuid();
+    if (_cuid!.isEmpty) {
+      // 极端兜底：warmup 未完成时当场生成一次并持久化
+      _cuid = 'baidutiebaapp${_uuidV4()}';
+    }
+
+    // 优先 WS，失败时降级 WSS
+    try {
+      await _connectWs(_wsUrl);
+    } catch (_) {
+      await _connectWs(_wsWssUrl);
+    }
 
     return initSession(bduss: bduss, stoken: stoken, cuidGalaxy2: cuidGalaxy2);
   }
@@ -169,6 +214,95 @@ class TiebaWsClient {
     );
     if (chats.isEmpty) return const [];
     return chats.first.messages;
+  }
+
+  /// 发送私信文本到指定群组。返回服务器分配的新 msgId，失败抛异常。
+  Future<int> sendGroupMessage(int groupId, String content) async {
+    final rng = Random.secure();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+
+    final dataW = ProtobufWriter();
+    dataW.writeInt64(1, groupId);
+    dataW.writeInt64(2, 1); // msgType: text
+    dataW.writeString(3, content);
+    dataW.writeInt64(4, ts);
+    dataW.writeInt64(5, rng.nextInt(99999999));
+
+    final outerW = ProtobufWriter();
+    outerW.writeString(1, '$_cuid|com.baidu.tieba$_clientVersion');
+    outerW.writeMessage(2, dataW.toBytes());
+
+    final resp = await _request(outerW.toBytes(), cmd: 202004);
+    _throwIfError(resp);
+    return _parseSendMsgResp(resp);
+  }
+
+  /// 创建与指定用户的新私信会话，返回 groupId。
+  Future<int> createPrivateChatGroup(int peerUserId) async {
+    final dataW = ProtobufWriter();
+    dataW.writeInt64(1, peerUserId);
+
+    final outerW = ProtobufWriter();
+    outerW.writeString(1, '$_cuid|com.baidu.tieba$_clientVersion');
+    outerW.writeMessage(2, dataW.toBytes());
+
+    final resp = await _request(outerW.toBytes(), cmd: 202001);
+    _throwIfError(resp);
+    return _parseCreateGroupResp(resp);
+  }
+
+  static int _parseSendMsgResp(Uint8List data) {
+    var msgId = 0;
+    final reader = ProtobufReader(data);
+    while (reader.hasMore) {
+      final tag = reader.readTag();
+      if (tag == null) break;
+      final (fn, wt) = tag;
+      if (fn == 2 && wt == 2) {
+        final dataBytes = reader.readBytes();
+        final dReader = ProtobufReader(dataBytes);
+        while (dReader.hasMore) {
+          final dTag = dReader.readTag();
+          if (dTag == null) break;
+          final (dFn, dWt) = dTag;
+          if (dFn == 5 && dWt == 0) {
+            msgId = dReader.readVarint();
+          } else {
+            dReader.skipField(dWt);
+          }
+        }
+      } else {
+        reader.skipField(wt);
+      }
+    }
+    return msgId;
+  }
+
+  static int _parseCreateGroupResp(Uint8List data) {
+    var groupId = 0;
+    final reader = ProtobufReader(data);
+    while (reader.hasMore) {
+      final tag = reader.readTag();
+      if (tag == null) break;
+      final (fn, wt) = tag;
+      if (fn == 2 && wt == 2) {
+        final dataBytes = reader.readBytes();
+        final dReader = ProtobufReader(dataBytes);
+        while (dReader.hasMore) {
+          final dTag = dReader.readTag();
+          if (dTag == null) break;
+          final (dFn, dWt) = dTag;
+          if (dFn == 1 && dWt == 0) {
+            groupId = dReader.readVarint();
+          } else {
+            dReader.skipField(dWt);
+          }
+        }
+      } else {
+        reader.skipField(wt);
+      }
+    }
+    return groupId;
   }
 
   Future<List<PrivateChatConversation>> _fetchGroups({
@@ -472,21 +606,8 @@ class TiebaWsClient {
     }
     return (userId, userName, portrait);
   }
-}
 
-class TiebaWsException implements Exception {
-  final int code;
-  final String message;
-  const TiebaWsException(this.code, this.message);
-
-  @override
-  String toString() => 'TiebaWsException($code): $message';
-}
-
-/// 简易 UUID v4（仅用于 cuid 生成）。
-class Uuid {
-  const Uuid();
-  String v4() {
+  static String _uuidV4() {
     final rng = Random.secure();
     final bytes = List<int>.generate(16, (_) => rng.nextInt(256));
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
@@ -500,3 +621,13 @@ class Uuid {
         '${hex(bytes[14])}${hex(bytes[15])}';
   }
 }
+
+class TiebaWsException implements Exception {
+  final int code;
+  final String message;
+  const TiebaWsException(this.code, this.message);
+
+  @override
+  String toString() => 'TiebaWsException($code): $message';
+}
+

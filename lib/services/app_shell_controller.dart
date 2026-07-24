@@ -131,6 +131,10 @@ class AppShellController extends ChangeNotifier {
 
   static final AppShellController instance = AppShellController._();
 
+  /// 当为 true 时，MainScaffold 隐藏底部导航栏。
+  /// PostDetailPage 等全屏内容页应在 initState/dispose 中设置。
+  static final ValueNotifier<bool> hideBottomNav = ValueNotifier<bool>(false);
+
   final List<AppShellCommand> _pending = [];
 
   VoidCallback? onLoginChanged;

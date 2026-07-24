@@ -12,6 +12,7 @@ abstract final class AppUiRouteNames {
   static const subComments = '/ui/sub-comments';
   static const privateChat = '/ui/private-chat';
   static const favorites = '/ui/favorites';
+  static const browseHistory = '/ui/browse-history';
   static const settings = '/ui/settings';
   static const loginHub = '/ui/login-hub';
   static const agentConfig = '/ui/agent-config';
@@ -26,9 +27,11 @@ Route<T> uiPageRoute<T>({
   required String name,
   Map<String, dynamic>? arguments,
   required WidgetBuilder builder,
+  bool fullscreenDialog = false,
 }) {
   return MaterialPageRoute<T>(
     settings: RouteSettings(name: name, arguments: arguments),
+    fullscreenDialog: fullscreenDialog,
     builder: builder,
   );
 }

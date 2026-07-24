@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -33,12 +34,13 @@ class TiebaClient {
     0xfa,
     0x9e,
   ];
-  static const _baseUrl = 'http://tiebac.baidu.com';
-  static const _webBaseUrl = 'http://tieba.baidu.com';
+  static const _baseUrl = 'https://tiebac.baidu.com';
+  static const _webBaseUrl = 'https://tieba.baidu.com';
   static const _clientVersion = '12.64.1.1';
+  static const _clientIdentifier = 'com.baidu.tieba';
 
   static const _appHeaders = {
-    'User-Agent': 'bdtb for Android 12.57.4.0',
+    'User-Agent': 'bdtb for Android 12.64.1.1',
     'Accept-Encoding': 'gzip',
     'Connection': 'keep-alive',
     'Host': 'tiebac.baidu.com',
@@ -50,6 +52,48 @@ class TiebaClient {
     'Accept-Encoding': 'gzip, deflate',
     'Connection': 'keep-alive',
   };
+
+  // ---- 写操作频率限制 ----
+
+  static final _lastWriteTimes = <String, int>{};
+  static int _lastGlobalWriteMs = 0;
+  static final _rng = Random();
+
+  static const _minTargetIntervalMs = 5000;
+  static const _minGlobalIntervalMs = 2500;
+
+  static int _checkWriteWaitMs(String targetKey) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final sinceGlobal = now - _lastGlobalWriteMs;
+    if (sinceGlobal < _minGlobalIntervalMs) {
+      return _minGlobalIntervalMs - sinceGlobal;
+    }
+    final sinceTarget = now - (_lastWriteTimes[targetKey] ?? 0);
+    if (sinceTarget < _minTargetIntervalMs) {
+      return _minTargetIntervalMs - sinceTarget;
+    }
+    return 0;
+  }
+
+  static Future<void> _applyWriteRateLimit(String targetKey) async {
+    final baseWaitMs = _checkWriteWaitMs(targetKey);
+    if (baseWaitMs <= 0) {
+      _recordWrite(targetKey);
+      return;
+    }
+    // ±30% 随机抖动，避免完全周期性的请求模式
+    final jitter = (baseWaitMs * (0.7 + _rng.nextDouble() * 0.6)).round();
+    await Future.delayed(Duration(milliseconds: jitter));
+    _recordWrite(targetKey);
+  }
+
+  static void _recordWrite(String targetKey) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    _lastGlobalWriteMs = now;
+    _lastWriteTimes[targetKey] = now;
+  }
+
+  // ---- 签名 ----
 
   static String computeSign(List<MapEntry<String, String>> params) {
     final sorted = List<MapEntry<String, String>>.from(params)
@@ -360,6 +404,7 @@ class TiebaClient {
     required String bduss,
     required String tbs,
   }) async {
+    await _applyWriteRateLimit('bar:$barName');
     return postForm(
       '/c/c/thread/addPost',
       params: [
@@ -377,6 +422,11 @@ class TiebaClient {
       DataSaverService.instance.enabled ? 30 : 100;
   static const subCommentPageSize = 30;
 
+  static bool _isTbsError(Map<String, dynamic> result) {
+    final msg = (result['error_msg']?.toString() ?? '').toLowerCase();
+    return msg.contains('tbs');
+  }
+
   static Future<Map<String, dynamic>> replyPost({
     required String tid,
     required String content,
@@ -386,15 +436,27 @@ class TiebaClient {
     int? fid,
     String? showName,
   }) async {
-    return _replyPostProto(
-      tid: tid,
-      content: content,
-      bduss: bduss,
-      tbs: tbs,
-      fname: fname ?? '',
-      fid: fid ?? 0,
-      showName: showName ?? '',
-    );
+    await _applyWriteRateLimit(tid);
+
+    Future<Map<String, dynamic>> doReply(String currentTbs) =>
+        _replyPostProto(
+          tid: tid,
+          content: content,
+          bduss: bduss,
+          tbs: currentTbs,
+          fname: fname ?? '',
+          fid: fid ?? 0,
+          showName: showName ?? '',
+        );
+
+    var result = await doReply(tbs);
+    if (_isTbsError(result)) {
+      final freshTbs = await fetchTbsToken(bduss);
+      if (freshTbs.isNotEmpty && freshTbs != tbs) {
+        result = await doReply(freshTbs);
+      }
+    }
+    return result;
   }
 
   static Future<Map<String, dynamic>> _replyPostProto({
@@ -413,16 +475,16 @@ class TiebaClient {
 
       final commonW = ProtobufWriter();
       commonW.writeString(2, _clientVersion);
-      commonW.writeString(3, 'dart_tieba');
+      commonW.writeString(3, _clientIdentifier);
       commonW.writeString(10, bduss);
       commonW.writeString(11, tbs);
       commonW.writeInt32(1, 2);
-      commonW.writeString(36, '000000000000000');
-      commonW.writeString(37, '1008621x');
-      commonW.writeString(43, 'SM-G988N');
+      commonW.writeString(36, DeviceIdService.getCuidGalaxy2Cached());
+      commonW.writeString(37, DeviceIdService.getDeviceUuid());
+      commonW.writeString(43, DeviceIdService.getModel());
       commonW.writeString(48, '1');
-      commonW.writeString(52, '10.3');
-      commonW.writeString(53, 'samsung');
+      commonW.writeString(52, DeviceIdService.getAndroidVersion());
+      commonW.writeString(53, DeviceIdService.getManufacturer());
       commonW.writeInt32(61, tsMs);
       commonW.writeString(72, showName.isNotEmpty ? showName : '贴吧网友');
       if (showName.isNotEmpty) {
@@ -542,7 +604,11 @@ class TiebaClient {
         return {'error_code': errorNo, 'error_msg': errorMsg};
       }
       if (needVcode) {
-        return {'error_code': -2, 'error_msg': '闇€瑕侀獙璇佺爜'};
+        return {
+          'error_code': 220068,
+          'error_msg': '需要验证码',
+          'need_vcode': true,
+        };
       }
       return {'error_code': 0, 'pid': postId.toString()};
     } catch (e) {
@@ -1048,16 +1114,28 @@ class TiebaClient {
     int? fid,
     String? showName,
   }) async {
-    return _replyPostProto(
-      tid: tid,
-      content: content,
-      bduss: bduss,
-      tbs: tbs,
-      fname: fname ?? '',
-      fid: fid ?? 0,
-      showName: showName ?? '',
-      parentPid: pid,
-    );
+    await _applyWriteRateLimit(tid);
+
+    Future<Map<String, dynamic>> doReply(String currentTbs) =>
+        _replyPostProto(
+          tid: tid,
+          content: content,
+          bduss: bduss,
+          tbs: currentTbs,
+          fname: fname ?? '',
+          fid: fid ?? 0,
+          showName: showName ?? '',
+          parentPid: pid,
+        );
+
+    var result = await doReply(tbs);
+    if (_isTbsError(result)) {
+      final freshTbs = await fetchTbsToken(bduss);
+      if (freshTbs.isNotEmpty && freshTbs != tbs) {
+        result = await doReply(freshTbs);
+      }
+    }
+    return result;
   }
 
   static Future<List<String>> fetchFollowedBarNames(
@@ -1749,7 +1827,7 @@ class TiebaClient {
       ...utf8.encode(footer),
     ];
     final headers = <String, String>{
-      'User-Agent': 'bdtb for Android 12.57.4.0',
+      'User-Agent': 'bdtb for Android 12.64.1.1',
       'x_bd_data_type': 'protobuf',
       'Connection': 'keep-alive',
       'Content-Type': 'multipart/form-data; boundary=$boundary',
@@ -1770,7 +1848,7 @@ class TiebaClient {
   }) {
     final w = ProtobufWriter();
     w.writeString(2, _clientVersion);
-    w.writeString(3, 'dart_tieba');
+    w.writeString(3, _clientIdentifier);
     if (bduss != null) w.writeString(10, bduss);
     if (tbs != null) w.writeString(11, tbs);
     if (stoken != null && stoken.isNotEmpty) {
@@ -3269,8 +3347,9 @@ class TiebaClient {
                     final bytes = aReader.readBytes();
                     final str = utf8.decode(bytes, allowMalformed: true);
                     if (afn == 3 && str.isNotEmpty) author = str;
-                    if (afn == 4 && str.isNotEmpty && author.isEmpty)
+                    if (afn == 4 && str.isNotEmpty && author.isEmpty) {
                       author = str;
+                    }
                     if (afn == 5 && str.isNotEmpty) portrait = str;
                   } catch (_) {}
                 } else {
@@ -4879,7 +4958,7 @@ class TiebaClient {
   }) {
     final commonW = ProtobufWriter();
     commonW.writeString(2, _clientVersion);
-    commonW.writeString(3, 'dart_tieba');
+    commonW.writeString(3, _clientIdentifier);
     if (bduss != null && bduss.isNotEmpty) {
       commonW.writeString(10, bduss);
     }

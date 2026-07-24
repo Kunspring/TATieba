@@ -547,8 +547,9 @@ class AgentCompanionController extends ChangeNotifier {
   }
 
   static String _formatQuickReply(AgentMessage reply) {
-    if (reply.isError)
+    if (reply.isError) {
       return reply.content.trim().isEmpty ? '出错了' : reply.content;
+    }
     var text = reply.content.trim();
     if (text.isEmpty && reply.blocks.isNotEmpty) {
       text = reply.blocks.first.label;

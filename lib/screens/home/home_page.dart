@@ -65,7 +65,7 @@ class _HomePageState extends State<HomePage>
   );
   final _loadingMoreNotifier = ValueNotifier(false);
   List<TiebaPost> _posts = [];
-  bool _loading = false;
+  bool _loading = true;
   bool _hasMore = true;
   bool _isLoggedIn = false;
   int _barPage = 0;

@@ -5,6 +5,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 
 import '../utils/save_network_image.dart';
+import 'agent_companion/agent_companion_controller.dart';
 import 'app_toast.dart';
 import 'kaomoji_loader.dart';
 
@@ -24,6 +25,7 @@ class ImageViewerPage extends StatefulWidget {
 class _ImageViewerPageState extends State<ImageViewerPage>
     with SingleTickerProviderStateMixin {
   bool _downloading = false;
+  Color? _prevCompanionColor;
   final TransformationController _transformController =
       TransformationController();
   AnimationController? _zoomAnimationController;
@@ -34,11 +36,23 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   void initState() {
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final c = AgentCompanionScope.maybeOf(context);
+      if (c != null) {
+        _prevCompanionColor = c.companionForegroundColor;
+        c.setCompanionColor(Colors.white);
+      }
+    });
   }
 
   @override
   void dispose() {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    final c = AgentCompanionScope.maybeOf(context);
+    if (c != null) {
+      c.setCompanionColor(_prevCompanionColor);
+    }
     _zoomAnimationController?.dispose();
     _transformController.dispose();
     super.dispose();

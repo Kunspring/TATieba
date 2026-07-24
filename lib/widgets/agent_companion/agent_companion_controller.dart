@@ -134,6 +134,13 @@ class AgentCompanionController extends ChangeNotifier {
     }
   }
 
+  void setCompanionColor(Color? color) {
+    if (companionForegroundColor != color) {
+      companionForegroundColor = color;
+      notifyListeners();
+    }
+  }
+
   AgentKaomojiMood get displayMood {
     if (toastMessage != null && toastType != null && !toastDismissing) {
       return toastType!.companionMood;

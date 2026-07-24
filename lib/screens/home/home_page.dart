@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../../models/bar_forum_context.dart';
 import '../../models/tieba_post.dart';
 import '../../utils/app_lifecycle_gate.dart';
@@ -30,6 +31,8 @@ import '../../widgets/kaomoji_loader.dart';
 import '../../widgets/app_skeleton.dart';
 import '../../widgets/app_toast.dart';
 import '../../widgets/agent_companion/agent_companion_controller.dart';
+import '../../utils/cover_image_cache.dart';
+import '../../utils/image_preloader.dart';
 import '../../widgets/post_card.dart';
 import '../detail/post_detail_page.dart';
 import '../login_hub_page.dart';
@@ -424,6 +427,20 @@ class _HomePageState extends State<HomePage>
     );
   }
 
+  void _preloadImages(List<TiebaPost> posts) {
+    if (posts.isEmpty) return;
+    final urls = <String>[];
+    for (final p in posts) {
+      if (p.cover != null && p.cover!.isNotEmpty) urls.add(p.cover!);
+      if (p.covers.isNotEmpty) urls.addAll(p.covers);
+    }
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ImagePreloader.warm(context, urls,
+          maxWidth: CoverImageCache.memCacheWidth(context));
+    });
+  }
+
   void _persistSession() {
     if (_posts.isEmpty) return;
     final offset = _scrollController.hasClients
@@ -490,6 +507,7 @@ class _HomePageState extends State<HomePage>
         _posts.addAll(more);
         _hasMore = TiebaCrawlerService.hasMore;
       });
+      _preloadImages(more);
       _persistSession();
       return more;
     };
@@ -522,6 +540,7 @@ class _HomePageState extends State<HomePage>
         _loading = false;
         _hasMore = TiebaCrawlerService.hasMore;
       });
+      _preloadImages(posts);
       SplashOverlay.ready.value = true;
       _scheduleRecommendLevelEnrich();
       _persistSession();
@@ -588,6 +607,7 @@ class _HomePageState extends State<HomePage>
           });
           SplashOverlay.ready.value = true;
           await _appendPostsChunked(posts);
+          _preloadImages(posts);
           if (!mounted) return;
           _patchFavoriteStatusLater(posts);
           _persistSession();
@@ -623,6 +643,7 @@ class _HomePageState extends State<HomePage>
           setState(() => _hasMore = fresh.isNotEmpty);
           if (fresh.isNotEmpty) {
             await _appendPostsChunked(fresh);
+            _preloadImages(fresh);
           }
           if (!mounted) return;
           _loadingMoreNotifier.value = false;
@@ -710,6 +731,7 @@ class _HomePageState extends State<HomePage>
           setState(() => _hasMore = TiebaCrawlerService.hasMore);
           if (newPosts.isNotEmpty) {
             await _appendPostsChunked(newPosts);
+            _preloadImages(newPosts);
           }
           if (!mounted) return;
           _loadingMoreNotifier.value = false;
@@ -886,7 +908,7 @@ class _HomePageState extends State<HomePage>
 
     return CustomScrollView(
       controller: _scrollController,
-      cacheExtent: 0,
+      cacheExtent: 800,
       physics: _scrollPhysics,
       slivers: [
         CupertinoSliverRefreshControl(

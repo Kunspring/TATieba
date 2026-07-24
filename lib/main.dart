@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -399,19 +400,19 @@ class _TiebaAppState extends State<TiebaApp> with WidgetsBindingObserver {
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
-          TargetPlatform.windows: _CustomPageTransitionBuilder(),
-          TargetPlatform.android: _CustomPageTransitionBuilder(),
-          TargetPlatform.iOS: _CustomPageTransitionBuilder(),
-          TargetPlatform.macOS: _CustomPageTransitionBuilder(),
-          TargetPlatform.linux: _CustomPageTransitionBuilder(),
+          TargetPlatform.windows: _CircularRevealTransitionBuilder(),
+          TargetPlatform.android: _CircularRevealTransitionBuilder(),
+          TargetPlatform.iOS: _CircularRevealTransitionBuilder(),
+          TargetPlatform.macOS: _CircularRevealTransitionBuilder(),
+          TargetPlatform.linux: _CircularRevealTransitionBuilder(),
         },
       ),
     );
   }
 }
 
-class _CustomPageTransitionBuilder extends PageTransitionsBuilder {
-  const _CustomPageTransitionBuilder();
+class _CircularRevealTransitionBuilder extends PageTransitionsBuilder {
+  const _CircularRevealTransitionBuilder();
 
   @override
   Widget buildTransitions<T>(
@@ -421,17 +422,55 @@ class _CustomPageTransitionBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return SlideTransition(
-      position: Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero)
-          .animate(
-            CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic,
-            ),
-          ),
-      child: FadeTransition(opacity: animation, child: child),
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final curved = Curves.easeOutCubic.transform(animation.value);
+        if (curved <= 0) return const SizedBox.expand();
+
+        final size = MediaQuery.sizeOf(context);
+        final center = Offset(size.width / 2, size.height / 2);
+        final maxR = _transitionMaxRadius(size, center);
+        final radius = maxR * curved;
+
+        return ClipPath(
+          clipper: _CircleClipClipper(center: center, radius: radius),
+          clipBehavior: Clip.antiAlias,
+          child: child,
+        );
+      },
     );
+  }
+}
+
+double _transitionMaxRadius(Size size, Offset center) {
+  final corners = [
+    Offset.zero,
+    Offset(size.width, 0),
+    Offset(0, size.height),
+    Offset(size.width, size.height),
+  ];
+  var maxDist = 0.0;
+  for (final corner in corners) {
+    maxDist = math.max(maxDist, (corner - center).distance);
+  }
+  return maxDist + 24;
+}
+
+class _CircleClipClipper extends CustomClipper<Path> {
+  final Offset center;
+  final double radius;
+
+  const _CircleClipClipper({required this.center, required this.radius});
+
+  @override
+  Path getClip(Size size) {
+    return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
+  }
+
+  @override
+  bool shouldReclip(covariant _CircleClipClipper oldClipper) {
+    return oldClipper.radius != radius || oldClipper.center != center;
   }
 }
 

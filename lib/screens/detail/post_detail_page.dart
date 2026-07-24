@@ -1075,7 +1075,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
               ? CoordinatedVerticalScrollPhysics(delegate: _scrollDelegate!)
               : const PullToFavoriteScrollPhysics(),
         ),
-        cacheExtent: 0,
+        cacheExtent: 800,
         slivers: [
           CupertinoSliverRefreshControl(
             onRefresh: _pullToFavorite,
@@ -1983,7 +1983,7 @@ class _SubCommentsPageState extends State<SubCommentsPage> {
     } else {
       body = ListView.builder(
         controller: _scrollController,
-        cacheExtent: 0,
+        cacheExtent: 800,
         padding: EdgeInsets.fromLTRB(
           16,
           12,

@@ -9,6 +9,7 @@ class TiebaPost {
   final String? authorAvatar;
   final String? authorPortrait;
   String? cover;
+  List<String> covers;
   String content;
   final String barName;
   final int? fid;
@@ -42,6 +43,7 @@ class TiebaPost {
     this.authorAvatar,
     this.authorPortrait,
     this.cover,
+    this.covers = const [],
     required this.content,
     required this.barName,
     this.fid,
@@ -63,6 +65,7 @@ class TiebaPost {
       authorAvatar: parseOptionalString(json['author_avatar']),
       authorPortrait: parseOptionalString(json['author_portrait']),
       cover: parseOptionalString(json['cover']),
+      covers: (json['covers'] as List?)?.map((e) => e.toString()).toList() ?? [],
       content: parseOptionalString(json['content']) ?? '',
       barName: parseOptionalString(json['bar_name']) ?? '',
       fid: parseOptionalInt(json['fid']),
@@ -90,6 +93,7 @@ class TiebaPost {
     'author_avatar': authorAvatar,
     'author_portrait': authorPortrait,
     'cover': cover,
+    if (covers.isNotEmpty) 'covers': covers,
     'content': content,
     'bar_name': barName,
     'fid': fid,

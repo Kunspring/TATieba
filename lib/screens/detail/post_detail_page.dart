@@ -171,12 +171,17 @@ class _PostDetailPageState extends State<PostDetailPage> {
         }
         return;
       }
+      final showName = TiebaAccountService.localSnapshot?.displayName;
+      final stoken = await TiebaAccountService.getStoken();
       final result = await TiebaClient.replyPost(
         tid: post.id,
         content: text,
         bduss: bduss,
         tbs: tbs,
         fname: post.barName,
+        fid: post.fid,
+        showName: showName,
+        stoken: stoken,
       );
       final errorCode = result['error_code'];
       if (errorCode != null && errorCode != 0) {
@@ -293,7 +298,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
     final post = _posts[math.min(_currentIndex, _posts.length - 1)];
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: colors.scaffold,
       appBar: GlassAppBar(
         companionLayoutKey: 'post-detail',
         titleText: post.barName.isNotEmpty ? post.barName : '帖子详情',
@@ -343,7 +348,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
           Positioned(
             left: 0,
             right: 0,
-            bottom: 0,
+            bottom: 8,
             child: _buildReplyBar(colors),
           ),
         ],
@@ -370,9 +375,12 @@ class _PostDetailBody extends StatefulWidget {
   State<_PostDetailBody> createState() => _PostDetailBodyState();
 }
 
+enum CommentSort { hot, asc, desc }
+
 class _PostDetailBodyState extends State<_PostDetailBody>
     with AutomaticKeepAliveClientMixin {
-  static const _floatingBarPad = 72.0;
+  static const _floatingBarPad = 80.0;
+  CommentSort _commentSort = CommentSort.hot;
   bool _postLiking = false;
   OverlayEntry? _likeEffectOverlay;
   final _scrollController = ScrollController();
@@ -382,6 +390,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
   );
   TiebaPostDetail? _detail;
   List<TiebaComment> _comments = [];
+  bool _onlyAuthor = false;
   bool _loading = true;
   bool _error = false;
   int _page = 1;
@@ -401,6 +410,12 @@ class _PostDetailBodyState extends State<_PostDetailBody>
   VoidCallback? _replyRefreshListener;
 
   TiebaPost get _favoritePost => _detail?.post ?? widget.post;
+
+  List<TiebaComment> get _filteredComments {
+    if (!_onlyAuthor) return _comments;
+    final author = _detail?.post.author ?? widget.post.author;
+    return _comments.where((c) => c.author == author).toList();
+  }
 
   @override
   bool get wantKeepAlive => widget.isActivePage;
@@ -572,6 +587,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
         widget.post.id,
         bduss: bduss,
         stoken: stoken,
+        sort: _commentSort.index,
       );
       if (!mounted) return;
       if (detail != null) {
@@ -671,6 +687,7 @@ class _PostDetailBodyState extends State<_PostDetailBody>
         page: nextPage,
         bduss: bduss,
         stoken: stoken,
+        sort: _commentSort.index,
       );
       if (!mounted) {
         _loadingMoreNotifier.value = false;
@@ -1077,32 +1094,75 @@ class _PostDetailBodyState extends State<_PostDetailBody>
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-              child: Text(
-                '评论',
-                style: AppFonts.caption(color: colors.textSecondary),
+              child: Row(
+                children: [
+                  Text(
+                    '评论',
+                    style: AppFonts.caption(color: colors.textSecondary),
+                  ),
+                  const Spacer(),
+                  _SortChip(
+                    label: '热门',
+                    selected: _commentSort == CommentSort.hot,
+                    onTap: () {
+                      if (_commentSort != CommentSort.hot) {
+                        _commentSort = CommentSort.hot;
+                        _loadDetail();
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  _SortChip(
+                    label: '正序',
+                    selected: _commentSort == CommentSort.asc,
+                    onTap: () {
+                      if (_commentSort != CommentSort.asc) {
+                        _commentSort = CommentSort.asc;
+                        _loadDetail();
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 4),
+                  _SortChip(
+                    label: '倒序',
+                    selected: _commentSort == CommentSort.desc,
+                    onTap: () {
+                      if (_commentSort != CommentSort.desc) {
+                        _commentSort = CommentSort.desc;
+                        _loadDetail();
+                      }
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _SortChip(
+                    label: '只看楼主',
+                    selected: _onlyAuthor,
+                    onTap: () => setState(() => _onlyAuthor = !_onlyAuthor),
+                  ),
+                ],
               ),
             ),
           ),
-          if (_comments.isNotEmpty)
+          if (_filteredComments.isNotEmpty)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: _CommentFloorDivider(colors: colors),
               ),
             ),
-          if (_comments.isEmpty)
+          if (_filteredComments.isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
               child: AppEmptyState(
                 icon: Icons.chat_bubble_outline,
-                message: '暂无评论',
+                message: _onlyAuthor ? '楼主暂无回复' : '暂无评论',
               ),
             )
           else ...[
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (_, i) {
-                  final comment = _comments[i];
+                  final comment = _filteredComments[i];
                   return _CommentTile(
                     key: ValueKey(comment.id),
                     comment: comment,
@@ -1113,15 +1173,15 @@ class _PostDetailBodyState extends State<_PostDetailBody>
                     onLike: () => _toggleCommentLike(comment),
                     onShowLikeEffect: _showLikeEffect,
                     onSubCommentLike: _toggleSubCommentLike,
-                    showBottomDivider: i < _comments.length - 1,
+                    showBottomDivider: i < _filteredComments.length - 1,
                   );
                 },
-                childCount: _comments.length,
+                childCount: _filteredComments.length,
                 addAutomaticKeepAlives: false,
                 addRepaintBoundaries: false,
                 findChildIndexCallback: (Key key) {
                   if (key is ValueKey<String>) {
-                    final index = _comments.indexWhere(
+                    final index = _filteredComments.indexWhere(
                       (c) => c.id == key.value,
                     );
                     return index >= 0 ? index : null;
@@ -1411,71 +1471,29 @@ class _CommentTileState extends State<_CommentTile> {
     final colors = context.appColors;
     TextStyle s(TextStyle base) =>
         base.copyWith(fontSize: (base.fontSize ?? 13) * fontScale);
-    return RepaintBoundary(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => openUserHome(
-                    context,
-                    authorAvatar: sub.authorAvatar,
-                    userName: sub.author,
-                    barName: widget.barName,
-                  ),
-                  behavior: HitTestBehavior.opaque,
-                  child: Row(
-                    children: [
-                      UserAvatar(
-                        imageUrl: sub.authorAvatar,
-                        radius: 10,
-                        name: sub.author,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          sub.author,
-                          style: s(AppFonts.caption(color: colors.primary)),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      ForumLevelBadge(
-                        forumLevel: sub.forumLevel,
-                        forumLevelName: sub.forumLevelName,
-                        compact: true,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (widget.onSubCommentLike != null)
-                _SubCommentLikeButton(
-                  sub: sub,
-                  onToggle: () => widget.onSubCommentLike!(sub),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Padding(
-            padding: const EdgeInsets.only(left: 26),
-            child: _copyOnLongPress(
-              context,
-              sub.content,
-              CommentContentBody.build(
-                context: context,
-                content: sub.content,
-                baseStyle: AppFonts.bodySmall(color: colors.textPrimary),
-                onImageTap: widget.onImageTap,
-                fontScale: fontScale,
-              ),
+    return GestureDetector(
+      onTap: () => openUserHome(
+        context,
+        authorAvatar: sub.authorAvatar,
+        userName: sub.author,
+        barName: widget.barName,
+      ),
+      behavior: HitTestBehavior.opaque,
+      child: RichText(
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: '${sub.author}：',
+              style: s(AppFonts.caption(color: colors.primary)),
             ),
-          ),
-        ],
+            TextSpan(
+              text: sub.content,
+              style: s(AppFonts.bodySmall(color: colors.textPrimary)),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1497,7 +1515,7 @@ class _CommentTileState extends State<_CommentTile> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
@@ -1633,7 +1651,7 @@ class _CommentTileState extends State<_CommentTile> {
                           if (widget.comment.subComments.isNotEmpty)
                             const SizedBox(height: 6),
                           Align(
-                            alignment: Alignment.centerLeft,
+                            alignment: Alignment.centerRight,
                             child: TextButton(
                               style: TextButton.styleFrom(
                                 padding: EdgeInsets.zero,
@@ -1707,6 +1725,35 @@ class _SubCommentSurface extends StatelessWidget {
 }
 
 /// 评论楼层之间的分隔线（比默认 [Divider] 更易辨认）。
+class _SortChip extends StatelessWidget {
+  const _SortChip({required this.label, required this.selected, required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.appColors;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: selected ? colors.primary.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Text(
+          label,
+          style: AppFonts.label(
+            color: selected ? colors.primary : colors.textMuted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CommentFloorDivider extends StatelessWidget {
   const _CommentFloorDivider({required this.colors});
 
@@ -1716,11 +1763,11 @@ class _CommentFloorDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Container(height: 1, color: colors.border.withValues(alpha: 0.9)),
-        const SizedBox(height: 1),
+        const SizedBox(height: 0),
         Container(
-          height: 4,
+          height: 3,
           color: colors.surfaceMuted.withValues(alpha: 0.28),
         ),
       ],
@@ -2033,7 +2080,7 @@ class _SubCommentsPageState extends State<SubCommentsPage> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: colors.scaffold,
       appBar: GlassAppBar(
         title: Text(
           '回复 (${widget.totalCount})',
@@ -2144,11 +2191,11 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
     super.initState();
     _bounceCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 280),
+      duration: const Duration(milliseconds: 160),
     );
     _scale = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.32), weight: 42),
-      TweenSequenceItem(tween: Tween(begin: 1.32, end: 1.0), weight: 58),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.28), weight: 38),
+      TweenSequenceItem(tween: Tween(begin: 1.28, end: 1.0), weight: 62),
     ]).animate(CurvedAnimation(parent: _bounceCtrl, curve: Curves.easeOut));
   }
 
@@ -2177,9 +2224,9 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
     final countSlotWidth = widget.iconSize <= 18 ? 26.0 : 32.0;
     final showCount = widget.likes > 0 || widget.showZeroCount;
 
-    return InkWell(
+    return GestureDetector(
         onTap: widget.busy ? null : _handleTap,
-        borderRadius: BorderRadius.circular(8),
+        behavior: HitTestBehavior.opaque,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(0, 2, 0, 2),
           child: Row(
@@ -2188,7 +2235,7 @@ class _AnimatedLikeButtonState extends State<_AnimatedLikeButton>
               ScaleTransition(
                 scale: _scale,
                 child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 180),
+                  duration: const Duration(milliseconds: 120),
                   transitionBuilder: (child, animation) =>
                       ScaleTransition(scale: animation, child: child),
                   child: ColorFiltered(

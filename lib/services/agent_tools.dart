@@ -147,14 +147,15 @@ abstract final class AgentTools {
     _tool(
       'web_search',
       '搜索互联网获取实时信息（新闻、百科、价格、天气、通用知识等，非贴吧内帖子）。'
-          '搜索结果可能只是你自己用来确认事实/补全知识，也可能要展示给用户看——用 show_card 控制是否出卡片。',
+          '先判断：这搜是为了你自己补知识（show_card: false），还是用户要看结果（show_card: true）？',
       {
         'query': _str('搜索关键词，尽量具体'),
         'show_card': _bool(
-          '是否把搜索结果渲染成卡片展示给用户。'
-          '默认 true。仅当你自己为了确认事实/补全知识而搜、用户并不需要看原始链接时，设 false（答案写进你的回复即可）。',
+          '是否出结果卡片给用户看。默认 false。'
+          'false=你自己搜来补知识/确认事实，消化后用口语告诉用户，不出链接卡片；'
+          'true=用户明确要查资料/看来源/搜东西，出卡片展示结果。拿不准就 false。',
         ),
-        'top': _int('最多展示几条结果（1~6），默认 6；只挑最相关的几条展示、省空间时用。'),
+        'top': _int('show_card=true 时最多展示几条（1~6），默认 3。'),
       },
       ['query'],
     ),
@@ -982,7 +983,7 @@ abstract final class AgentTools {
     if (result['error'] != null) return result;
     return {
       ...result,
-      'show_card': showCard is bool ? showCard : true,
+      'show_card': showCard is bool ? showCard : false,
       'top': ?topClamped,
     };
   }

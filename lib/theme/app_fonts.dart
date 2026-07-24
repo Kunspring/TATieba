@@ -9,6 +9,8 @@ abstract final class AppFonts {
   static const double lineHeightNormal = 1.5;
   static const double lineHeightRelaxed = 1.55;
 
+  static const String fontFamily = 'SimSun';
+
   static TextStyle _withDefaults({
     double fontSize = 14,
     FontWeight fontWeight = FontWeight.w400,
@@ -22,6 +24,7 @@ abstract final class AppFonts {
       height: height,
       letterSpacing: letterSpacing,
       color: color,
+      fontFamily: fontFamily,
       leadingDistribution: TextLeadingDistribution.even,
     );
   }

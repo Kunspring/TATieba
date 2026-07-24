@@ -20,7 +20,7 @@ class WebSearchHit {
   };
 }
 
-/// 联网搜索：优先 Serper（可选 Key），否则 Bing / DuckDuckGo HTML。
+/// 联网搜索：优先 Serper（可选 Key），否则 Baidu / Bing / DuckDuckGo HTML。
 abstract final class WebSearchService {
   WebSearchService._();
 
@@ -53,6 +53,15 @@ abstract final class WebSearchService {
     }
 
     if (hits.isEmpty) {
+      hits = await _searchBaidu(q);
+      if (hits.isNotEmpty) {
+        provider = 'baidu';
+      } else {
+        failures.add('Baidu 解析失败或不可达');
+      }
+    }
+
+    if (hits.isEmpty) {
       hits = await _searchBing(q);
       if (hits.isNotEmpty) {
         provider = 'bing';
@@ -73,8 +82,8 @@ abstract final class WebSearchService {
     if (hits.isEmpty) {
       return {
         'error': key.isEmpty
-            ? '免费联网源均不可用（国内网络常无法访问 DuckDuckGo）。'
-                  '请在「助手设置 → 高级 → Serper API Key」填写 Key 后重试（serper.dev 注册）。'
+            ? '免费联网源均不可用。'
+                  '请在「助手设置 → 高级 → Serper API Key」填写 Key 后重试'
             : '联网搜索失败：${failures.join('；')}。请检查 Serper Key 或稍后重试。',
         'failures': failures,
       };
@@ -138,6 +147,209 @@ abstract final class WebSearchService {
     }
   }
 
+  // ── Baidu ───────────────────────────────────────────────────
+
+  static Future<List<WebSearchHit>> _searchBaidu(String query) async {
+    // Try www.baidu.com first (better UTF-8 handling), then m.baidu.com.
+    for (final entry in const [
+      ('www.baidu.com', 'wd'),
+      ('m.baidu.com', 'word'),
+    ]) {
+      try {
+        final encoded = Uri.encodeQueryComponent(query);
+        final uri = Uri.parse(
+          'https://${entry.$1}/s?ie=utf-8&f=8&${entry.$2}=$encoded',
+        );
+        final resp = await http
+            .get(
+              uri,
+              headers: {
+                'User-Agent': _userAgent,
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+                'Accept-Charset': 'utf-8',
+              },
+            )
+            .timeout(const Duration(seconds: 15));
+
+        if (resp.statusCode != 200) continue;
+        final body = resp.body;
+        // CAPTCHA / block page
+        if (body.length < 8000 &&
+            (body.contains('验证') || body.contains('captcha'))) {
+          continue;
+        }
+        final hits = _parseBaiduHtml(body);
+        if (hits.isNotEmpty) return hits;
+      } catch (_) {
+        continue;
+      }
+    }
+    return [];
+  }
+
+  static List<WebSearchHit> _parseBaiduHtml(String html) {
+    final hits = <WebSearchHit>[];
+
+    // Baidu mobile wraps each result in a <div class="c-result"> (or similar).
+    // Strategy: find result anchors with the real URL in a data attribute or
+    // the mu= redirect param, then grab title text and neighbour snippet.
+    final resultRe = RegExp(
+      r'<div[^>]*\bclass="[^"]*\b(?:c-result|result|c-container)\b[^"]*"[^>]*>'
+      r'([\s\S]*?)'
+      r'(?=<div[^>]*\bclass="[^"]*\b(?:c-result|result|c-container)\b[^"]*"[^>]*>|$)',
+      caseSensitive: false,
+    );
+
+    for (final m in resultRe.allMatches(html)) {
+      if (hits.length >= _maxResults) break;
+      final block = m.group(1)!;
+
+      // Extract title + redirect URL
+      final linkRe = RegExp(
+        r'<a[^>]*\bhref="([^"]+)"[^>]*>([\s\S]*?)</a>',
+        caseSensitive: false,
+      );
+      final linkMatch = linkRe.firstMatch(block);
+      if (linkMatch == null) continue;
+
+      var rawUrl = _decodeHtmlEntities(linkMatch.group(1)!);
+      final title = _stripTags(linkMatch.group(2)!);
+
+      // Resolve Baidu redirect URL to real URL
+      final url = _resolveBaiduUrl(rawUrl);
+
+      // Skip internal Baidu pages and empty results
+      if (title.isEmpty || url.isEmpty) continue;
+      if (_isBaiduInternal(url)) continue;
+
+      // Extract snippet from nearby text blocks
+      final snippet = _extractBaiduSnippet(block);
+
+      hits.add(WebSearchHit(
+        title: _clip(title, 120),
+        url: url,
+        snippet: _clip(snippet, _maxSnippet),
+      ));
+    }
+
+    // Fallback: simpler pattern if the container approach yielded nothing
+    if (hits.isEmpty) {
+      _parseBaiduFallback(html, hits);
+    }
+
+    return hits;
+  }
+
+  /// Extract real URL from Baidu's redirect wrapper.
+  /// Mobile Baidu uses mu= param or l= param for the destination.
+  static String _resolveBaiduUrl(String rawUrl) {
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null) return rawUrl;
+
+    // Direct external URL (rare but possible)
+    if (!uri.host.contains('baidu.com')) return rawUrl;
+
+    // Mobile redirect: ?mu=<encoded_url> or &mu=<encoded_url>
+    final mu = uri.queryParameters['mu'];
+    if (mu != null && mu.isNotEmpty) {
+      final decoded = Uri.decodeComponent(mu);
+      if (Uri.tryParse(decoded)?.hasScheme == true) return decoded;
+    }
+
+    // Legacy redirect: /link?url=<encoded>
+    final linkParam = uri.queryParameters['url'];
+    if (linkParam != null && linkParam.isNotEmpty) {
+      final decoded = Uri.decodeComponent(linkParam);
+      if (Uri.tryParse(decoded)?.hasScheme == true) return decoded;
+    }
+
+    // Keep the redirect URL as-is — at least it's clickable
+    return rawUrl;
+  }
+
+  static bool _isBaiduInternal(String url) {
+    final host = Uri.tryParse(url)?.host ?? '';
+    if (host.isEmpty) return true;
+    // Filter out Baidu's own properties
+    if (host == 'm.baidu.com' || host == 'www.baidu.com' || host == 'baidu.com') {
+      return true;
+    }
+    if (host.contains('baidu.com') && host.startsWith('zhidao.')) return false;
+    if (host.contains('baidu.com') && host.startsWith('baike.')) return false;
+    if (host.contains('baidu.com') && host.startsWith('tieba.')) return false;
+    if (host.contains('baidu.com') && host.startsWith('wenku.')) return false;
+    return host.endsWith('.baidu.com') && _isBaiduServiceHost(host);
+  }
+
+  static bool _isBaiduServiceHost(String host) {
+    const services = [
+      'map.', 'image.', 'video.', 'music.', 'news.',
+      'top.', 'home.', 'index.', 'lv.', 'cp.',
+    ];
+    return services.any((s) => host.startsWith(s));
+  }
+
+  static String _extractBaiduSnippet(String block) {
+    // Try common snippet class names (mobile + desktop Baidu)
+    for (final cls in [
+      'c-abstract', 'c-summary', 'c-line-clamp', 'c-span',
+      'content-right_', 'c-row',
+    ]) {
+      final re = RegExp(
+        r'<[^>]*\bclass="[^"]*\b' + cls + r'[^"]*"[^>]*>([\s\S]*?)</(?:div|span|p|em)>',
+        caseSensitive: false,
+      );
+      final m = re.firstMatch(block);
+      if (m != null) {
+        final text = _stripTags(m.group(1)!);
+        if (text.isNotEmpty) return text;
+      }
+    }
+    return '';
+  }
+
+  static void _parseBaiduFallback(String html, List<WebSearchHit> hits) {
+    // Try desktop redirect pattern first: /link?url=<encoded>
+    final desktopLinkRe = RegExp(
+      r'<a[^>]*\bhref="[^"]*/link\?[^"]*\burl=([^"&]+)[^"]*"[^>]*>([\s\S]*?)</a>',
+      caseSensitive: false,
+    );
+    for (final m in desktopLinkRe.allMatches(html)) {
+      if (hits.length >= _maxResults) break;
+      final url = Uri.decodeComponent(m.group(1)!);
+      final title = _stripTags(m.group(2)!);
+      if (title.isEmpty || !url.startsWith('http')) continue;
+      if (_isBaiduInternal(url)) continue;
+      hits.add(WebSearchHit(
+        title: _clip(title, 120),
+        url: url,
+        snippet: '',
+      ));
+    }
+    if (hits.isNotEmpty) return;
+
+    // Mobile fallback: any <a> with mu= redirect param
+    final mobileLinkRe = RegExp(
+      r'<a[^>]*\bhref="([^"]*\bmu=([^"&]+))"[^>]*>([\s\S]*?)</a>',
+      caseSensitive: false,
+    );
+    for (final m in mobileLinkRe.allMatches(html)) {
+      if (hits.length >= _maxResults) break;
+      final encodedMu = m.group(2)!;
+      final url = Uri.decodeComponent(encodedMu);
+      final title = _stripTags(m.group(3)!);
+      if (title.isEmpty || !url.startsWith('http')) continue;
+      if (_isBaiduInternal(url)) continue;
+      hits.add(WebSearchHit(
+        title: _clip(title, 120),
+        url: url,
+        snippet: '',
+      ));
+    }
+  }
+
+  // ── Bing ─────────────────────────────────────────────────────
+
   static Future<List<WebSearchHit>> _searchBing(String query) async {
     for (final host in const ['cn.bing.com', 'www.bing.com']) {
       try {
@@ -167,6 +379,47 @@ abstract final class WebSearchService {
 
   static List<WebSearchHit> _parseBingHtml(String html) {
     final hits = <WebSearchHit>[];
+
+    // Try the b_algo list-item structure first (current Bing).
+    final algoRe = RegExp(
+      r'<li[^>]*\bclass="[^"]*\bb_algo\b[^"]*"[^>]*>([\s\S]*?)</li>',
+      caseSensitive: false,
+    );
+    final algoMatches = algoRe.allMatches(html).toList();
+
+    if (algoMatches.isNotEmpty) {
+      for (final m in algoMatches) {
+        if (hits.length >= _maxResults) break;
+        final block = m.group(1)!;
+        final linkRe = RegExp(
+          r'<a[^>]*\bhref="([^"]+)"[^>]*>([\s\S]*?)</a>',
+          caseSensitive: false,
+        );
+        final link = linkRe.firstMatch(block);
+        if (link == null) continue;
+        var url = _decodeHtmlEntities(link.group(1)!);
+        final title = _stripTags(link.group(2)!);
+        if (title.isEmpty || url.isEmpty) continue;
+        if (url.startsWith('javascript:')) continue;
+        if (url.startsWith('/')) url = 'https://www.bing.com$url';
+
+        final snippetRe = RegExp(
+          r'<p[^>]*\bclass="[^"]*\b(?:b_lineclamp|b_algoSlug)[^"]*"[^>]*>([\s\S]*?)</p>',
+          caseSensitive: false,
+        );
+        final sn = snippetRe.firstMatch(block);
+        final snippet = sn != null ? _stripTags(sn.group(1)!) : '';
+
+        hits.add(WebSearchHit(
+          title: _clip(title, 120),
+          url: url,
+          snippet: _clip(snippet, _maxSnippet),
+        ));
+      }
+      if (hits.isNotEmpty) return hits;
+    }
+
+    // Legacy fallback: raw h2 + link patterns
     final titleRe = RegExp(
       r'<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>\s*</h2>',
       dotAll: true,

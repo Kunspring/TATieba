@@ -20,6 +20,8 @@ import 'agent_emotion_fusion.dart';
 import 'agent_turn_router.dart';
 import 'agent_error_explainer.dart';
 import 'app_ui_context.dart';
+import '../utils/agent_prompt_guard.dart';
+import 'agent_context_compressor.dart';
 
 /// 在 isolate 中把对话历史 Map 列表编码为 JSON 字符串，
 /// 避免主线程同步 jsonEncode 长对话历史导致的卡顿（含退出时）。
@@ -203,7 +205,7 @@ class AgentService {
       companionShaking: companionShaking,
     );
 
-    final apiMessages = <Map<String, dynamic>>[
+    var apiMessages = <Map<String, dynamic>>[
       {'role': 'system', 'content': systemContent},
       ...history
           .where(
@@ -232,6 +234,16 @@ class AgentService {
     }
 
     thinkingSteps.add('分析你的问题…');
+
+    // 长对话压缩：token 超 75% 窗口时生成结构化摘要
+    if (AgentContextCompressor.needsCompression(apiMessages)) {
+      thinkingSteps.add('对话较长，整理上下文…');
+      emitProgress();
+      apiMessages = await AgentContextCompressor.compress(
+        messages: apiMessages,
+        config: config,
+      );
+    }
     if (emotion.usedLlmAppraisal) {
       thinkingSteps.add('理解你的情绪…');
     }
@@ -349,6 +361,9 @@ class AgentService {
       if (toolCalls is List && toolCalls.isNotEmpty) {
         toolsUsedThisTurn = true;
         apiMessages.add(Map<String, dynamic>.from(message));
+
+        // Parse all calls first
+        final parsed = <_ToolCallRequest>[];
         for (final call in toolCalls) {
           if (call is! Map) continue;
           final fn = call['function'];
@@ -362,113 +377,126 @@ class AgentService {
               args = Map<String, dynamic>.from(decoded);
             }
           } catch (_) {}
-          thinkingSteps.add('调用：${AgentTools.describeCall(name, args)}');
-          emitProgress();
-          if (name == 'open_post') openPostInvoked = true;
-          _throwIfCancelled();
-          final result = await AgentTools.execute(name, args);
-          _throwIfCancelled();
-          Map<String, dynamic>? decodedResult;
-          try {
-            final decoded = jsonDecode(result);
-            if (decoded is Map) {
-              decodedResult = Map<String, dynamic>.from(decoded);
-              AgentResultBuilder.absorbResults(
-                name,
-                decodedResult,
-                collectedBlocks,
-              );
-              if (AgentMetaTools.isMetaTool(name)) {
-                openPostInvoked =
-                    openPostInvoked ||
-                    AgentMetaTools.nestedInvokedOpenPost(decodedResult);
-              }
-              if (decodedResult['error'] != null) {
-                if (AgentErrorDiagnostics.isRetryable(
-                  AgentErrorDiagnostics.classify(
-                    decodedResult['error'].toString(),
-                  ),
-                )) {
-                  hadRetryableError = true;
-                }
-                if (!_shouldRecordTurnError(name, decodedResult)) {
-                  // 软失败（如绘画缺参数、找视频仅 hint）不记入 turnErrors
-                } else if (!_hasTurnError(
-                  turnErrors,
-                  name,
-                  decodedResult['error'].toString(),
-                )) {
-                  turnErrors.add(
-                    AgentTurnError(
-                      tool: name,
-                      rawError: decodedResult['error'].toString(),
-                    ),
-                  );
-                }
-              } else if (AgentMetaTools.isMetaTool(name)) {
-                final steps = decodedResult['steps'];
-                if (steps is List) {
-                  for (final step in steps.whereType<Map>()) {
-                    if (step['ok'] == true) continue;
-                    final err = step['error']?.toString();
-                    if (err == null || err.isEmpty) continue;
-                    if (AgentErrorDiagnostics.isRetryable(
-                      AgentErrorDiagnostics.classify(err),
-                    )) {
-                      hadRetryableError = true;
-                    }
-                    final stepTool = step['tool']?.toString() ?? name;
-                    if (!_shouldRecordTurnError(stepTool, {'error': err})) {
-                      continue;
-                    }
-                    if (_hasTurnError(turnErrors, stepTool, err)) continue;
-                    turnErrors.add(
-                      AgentTurnError(tool: stepTool, rawError: err),
-                    );
-                  }
-                }
-              }
+          parsed.add(_ToolCallRequest(
+            id: call['id']?.toString() ?? name,
+            name: name,
+            args: args,
+          ));
+        }
+
+        // Execute: parallel-safe tools run concurrently, others sequentially
+        final results = <String, _ToolCallResult>{};
+        var i = 0;
+        while (i < parsed.length) {
+          // Collect consecutive parallel-safe calls into a batch
+          final batch = <_ToolCallRequest>[];
+          while (i < parsed.length && _isParallelSafe(parsed[i].name)) {
+            batch.add(parsed[i]);
+            i++;
+          }
+
+          if (batch.isNotEmpty) {
+            // Parallel execution
+            for (final req in batch) {
+              thinkingSteps.add('调用：${AgentTools.describeCall(req.name, req.args)}');
             }
-          } catch (_) {}
-          if (wantsOpenPost &&
-              !openPostInvoked &&
-              decodedResult != null &&
-              decodedResult['error'] == null) {
-            final tid = _extractPostTid(args, decodedResult);
-            final canAutoOpen =
-                tid.isNotEmpty &&
-                (name == 'get_post_detail' ||
-                    name == 'read_post' ||
-                    (name == 'find_video_posts' &&
-                        decodedResult.containsKey('top_comments')) ||
-                    ((name == 'discover_posts' || name == 'search_threads') &&
-                        decodedResult['posts'] is List &&
-                        (decodedResult['posts'] as List).isNotEmpty));
-            if (canAutoOpen) {
-              final openArgs = <String, dynamic>{'tid': tid};
-              final firstPost = _firstPostEntry(decodedResult);
-              final title = decodedResult['title'] ?? firstPost?['title'];
-              final barName =
-                  decodedResult['bar_name'] ?? firstPost?['bar_name'];
-              final author = decodedResult['author'] ?? firstPost?['author'];
-              final replyCount =
-                  decodedResult['reply_count'] ?? firstPost?['reply_count'];
-              if (title?.isNotEmpty == true) openArgs['title'] = title;
-              if (barName?.isNotEmpty == true) {
-                openArgs['bar_name'] = barName;
-              }
-              if (author?.isNotEmpty == true) openArgs['author'] = author;
-              if (replyCount != null) openArgs['reply_count'] = replyCount;
-              thinkingSteps.add('自动打开帖子详情页…');
-              emitProgress();
-              openPostInvoked = true;
-              await AgentTools.execute('open_post', openArgs);
+            emitProgress();
+            _throwIfCancelled();
+            final batchResults = await Future.wait(
+              batch.map((req) => AgentTools.execute(req.name, req.args)),
+            );
+            _throwIfCancelled();
+            for (var j = 0; j < batch.length; j++) {
+              results[batch[j].id] = _ToolCallResult(
+                name: batch[j].name,
+                args: batch[j].args,
+                rawResult: batchResults[j],
+              );
             }
           }
+
+          // Sequential calls execute one at a time
+          while (i < parsed.length && !_isParallelSafe(parsed[i].name)) {
+            final req = parsed[i];
+            thinkingSteps.add('调用：${AgentTools.describeCall(req.name, req.args)}');
+            emitProgress();
+            _throwIfCancelled();
+            final result = await AgentTools.execute(req.name, req.args);
+            _throwIfCancelled();
+            results[req.id] = _ToolCallResult(
+              name: req.name,
+              args: req.args,
+              rawResult: result,
+            );
+            i++;
+          }
+        }
+
+        // Process results in original order
+        for (final req in parsed) {
+          final res = results[req.id];
+          if (res == null) continue;
+          if (req.name == 'open_post') openPostInvoked = true;
+          if (_processToolResult(
+            name: req.name,
+            args: req.args,
+            rawResult: res.rawResult,
+            collectedBlocks: collectedBlocks,
+            turnErrors: turnErrors,
+          )) {
+            hadRetryableError = true;
+          }
+
+          // Auto-open logic
+          if (wantsOpenPost && !openPostInvoked) {
+            Map<String, dynamic>? decodedResult;
+            try {
+              final decoded = jsonDecode(res.rawResult);
+              if (decoded is Map) {
+                decodedResult = Map<String, dynamic>.from(decoded);
+              }
+            } catch (_) {}
+            if (decodedResult != null && decodedResult['error'] == null) {
+              final tid = _extractPostTid(req.args, decodedResult);
+              final canAutoOpen = tid.isNotEmpty &&
+                  (req.name == 'get_post_detail' ||
+                      req.name == 'read_post' ||
+                      (req.name == 'find_video_posts' &&
+                          decodedResult.containsKey('top_comments')) ||
+                      ((req.name == 'discover_posts' ||
+                              req.name == 'search_threads') &&
+                          decodedResult['posts'] is List &&
+                          (decodedResult['posts'] as List).isNotEmpty));
+              if (canAutoOpen) {
+                final openArgs = <String, dynamic>{'tid': tid};
+                final firstPost = _firstPostEntry(decodedResult);
+                final title = decodedResult['title'] ?? firstPost?['title'];
+                final barName =
+                    decodedResult['bar_name'] ?? firstPost?['bar_name'];
+                final author =
+                    decodedResult['author'] ?? firstPost?['author'];
+                final replyCount =
+                    decodedResult['reply_count'] ?? firstPost?['reply_count'];
+                if (title?.isNotEmpty == true) openArgs['title'] = title;
+                if (barName?.isNotEmpty == true) {
+                  openArgs['bar_name'] = barName;
+                }
+                if (author?.isNotEmpty == true) openArgs['author'] = author;
+                if (replyCount != null) {
+                  openArgs['reply_count'] = replyCount;
+                }
+                thinkingSteps.add('自动打开帖子详情页…');
+                emitProgress();
+                openPostInvoked = true;
+                await AgentTools.execute('open_post', openArgs);
+              }
+            }
+          }
+
           apiMessages.add({
             'role': 'tool',
-            'tool_call_id': call['id']?.toString() ?? name,
-            'content': result,
+            'tool_call_id': req.id,
+            'content': res.rawResult,
           });
         }
         if (hadRetryableError && toolRetries < maxToolRetries) {
@@ -586,35 +614,36 @@ class AgentService {
 
   static Map<String, dynamic> _messageToApi(AgentMessage message) {
     final role = message.role == AgentMessageRole.user ? 'user' : 'assistant';
-    if (message.role == AgentMessageRole.user &&
-        message.attachmentKind == AgentAttachmentKind.image &&
-        (message.hasImage || message.hadImage)) {
-      final text = message.content.trim();
-      return {
-        'role': 'user',
-        'content': text.isNotEmpty ? text : '[用户发送了一张图片]',
-      };
-    }
-    if (message.role == AgentMessageRole.user &&
-        message.attachmentKind == AgentAttachmentKind.file &&
-        message.attachmentName != null) {
-      return {
-        'role': 'user',
-        'content': AgentAttachmentReader.buildOutboundText(
-          userText: message.content,
-          file: AgentAttachmentReadResult(
-            fileName: message.attachmentName!,
-            mimeType: message.attachmentMimeType ?? 'text/plain',
-            text: message.attachmentExtract ?? '',
-            success:
-                message.attachmentExtract != null &&
-                !message.attachmentExtract!.startsWith('[读取失败'),
-            error: message.attachmentExtract?.startsWith('[读取失败') == true
-                ? message.attachmentExtract
-                : null,
+    if (message.role == AgentMessageRole.user) {
+      final (cleanContent, _) = AgentPromptGuard.guard(message.content);
+      if (message.attachmentKind == AgentAttachmentKind.image &&
+          (message.hasImage || message.hadImage)) {
+        return {
+          'role': 'user',
+          'content': cleanContent.isNotEmpty ? cleanContent : '[用户发送了一张图片]',
+        };
+      }
+      if (message.attachmentKind == AgentAttachmentKind.file &&
+          message.attachmentName != null) {
+        return {
+          'role': 'user',
+          'content': AgentAttachmentReader.buildOutboundText(
+            userText: cleanContent,
+            file: AgentAttachmentReadResult(
+              fileName: message.attachmentName!,
+              mimeType: message.attachmentMimeType ?? 'text/plain',
+              text: message.attachmentExtract ?? '',
+              success:
+                  message.attachmentExtract != null &&
+                  !message.attachmentExtract!.startsWith('[读取失败'),
+              error: message.attachmentExtract?.startsWith('[读取失败') == true
+                  ? message.attachmentExtract
+                  : null,
+            ),
           ),
-        ),
-      };
+        };
+      }
+      return {'role': role, 'content': cleanContent};
     }
     return {'role': role, 'content': message.content};
   }
@@ -630,13 +659,17 @@ class AgentService {
         imageMimeType != null &&
         imageMimeType.isNotEmpty;
     if (!hasImage) {
-      return {'role': 'user', 'content': text};
+      final (cleanText, flagged) = AgentPromptGuard.guard(text);
+      return {'role': 'user', 'content': cleanText};
     }
 
+    final (cleanText, _) = AgentPromptGuard.guard(
+      text.trim().isNotEmpty ? text.trim() : '请看看这张图片',
+    );
     final parts = <Map<String, dynamic>>[
       {
         'type': 'text',
-        'text': text.trim().isNotEmpty ? text.trim() : '请看看这张图片',
+        'text': cleanText,
       },
       {
         'type': 'image_url',
@@ -920,6 +953,13 @@ class AgentService {
     return false;
   }
 
+  /// 只读查询类工具可并行执行；写操作和 UI 跳转类必须串行。
+  static bool _isParallelSafe(String toolName) {
+    return !RegExp(
+      r'^(open_|navigate_|set_|sign_|follow_|unfollow_|reply_|send_|post_)',
+    ).hasMatch(toolName);
+  }
+
   static String _friendlyApiError(String? msg, int statusCode) {
     final text = (msg ?? '').toLowerCase();
     if (text.contains('image') ||
@@ -929,6 +969,64 @@ class AgentService {
       return '当前模型或接口不支持识图，请换文字提问，或在设置里换成支持 Vision 的模型';
     }
     return msg ?? '请求失败 ($statusCode)';
+  }
+
+  /// Process a single tool result. Returns true if a retryable error was found.
+  static bool _processToolResult({
+    required String name,
+    required Map<String, dynamic> args,
+    required String rawResult,
+    required List<AgentResultBlock> collectedBlocks,
+    required List<AgentTurnError> turnErrors,
+  }) {
+    var hadRetryable = false;
+    try {
+      final decoded = jsonDecode(rawResult);
+      if (decoded is Map) {
+        final decodedResult = Map<String, dynamic>.from(decoded);
+        AgentResultBuilder.absorbResults(name, decodedResult, collectedBlocks);
+        if (decodedResult['error'] != null) {
+          if (AgentErrorDiagnostics.isRetryable(
+            AgentErrorDiagnostics.classify(decodedResult['error'].toString()),
+          )) {
+            hadRetryable = true;
+          }
+          if (_shouldRecordTurnError(name, decodedResult)) {
+            if (!_hasTurnError(
+              turnErrors,
+              name,
+              decodedResult['error'].toString(),
+            )) {
+              turnErrors.add(
+                AgentTurnError(
+                  tool: name,
+                  rawError: decodedResult['error'].toString(),
+                ),
+              );
+            }
+          }
+        } else if (AgentMetaTools.isMetaTool(name)) {
+          final steps = decodedResult['steps'];
+          if (steps is List) {
+            for (final step in steps.whereType<Map>()) {
+              if (step['ok'] == true) continue;
+              final err = step['error']?.toString();
+              if (err == null || err.isEmpty) continue;
+              if (AgentErrorDiagnostics.isRetryable(
+                AgentErrorDiagnostics.classify(err),
+              )) {
+                hadRetryable = true;
+              }
+              final stepTool = step['tool']?.toString() ?? name;
+              if (!_shouldRecordTurnError(stepTool, {'error': err})) continue;
+              if (_hasTurnError(turnErrors, stepTool, err)) continue;
+              turnErrors.add(AgentTurnError(tool: stepTool, rawError: err));
+            }
+          }
+        }
+      }
+    } catch (_) {}
+    return hadRetryable;
   }
 
   static Future<void> _storageChain = Future<void>.value();
@@ -992,4 +1090,20 @@ class AgentService {
       await AgentConfigService.clearHistory();
     });
   }
+}
+
+// ── Parallel tool helpers ───────────────────────────────────
+
+class _ToolCallRequest {
+  final String id;
+  final String name;
+  final Map<String, dynamic> args;
+  const _ToolCallRequest({required this.id, required this.name, required this.args});
+}
+
+class _ToolCallResult {
+  final String name;
+  final Map<String, dynamic> args;
+  final String rawResult;
+  const _ToolCallResult({required this.name, required this.args, required this.rawResult});
 }

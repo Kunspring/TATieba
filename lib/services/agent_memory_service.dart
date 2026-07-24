@@ -132,25 +132,27 @@ class AgentMemoryService {
     final active = _entries.where((e) => e.isActive).toList();
     if (!_enabled || active.isEmpty) return null;
 
-    final sorted = [...active];
+    final List<AgentMemoryEntry> sorted;
     if (query != null && query.trim().isNotEmpty) {
-      sorted.sort(
-        (a, b) => AgentMemoryConsistency.relevanceScore(
-          query,
-          b,
-        ).compareTo(AgentMemoryConsistency.relevanceScore(query, a)),
+      // 基于 IDF 的 BM25 风格排序
+      sorted = AgentMemoryConsistency.rankByRelevance(
+        query,
+        active,
+        limit: _maxPromptItems,
       );
     } else {
-      sorted.sort((a, b) {
-        final profileBoost = (b.category == AgentMemoryCategory.profile ? 1 : 0)
-            .compareTo(a.category == AgentMemoryCategory.profile ? 1 : 0);
-        if (profileBoost != 0) return profileBoost;
-        final conf = b.confidence.compareTo(a.confidence);
-        if (conf != 0) return conf;
-        final imp = b.importance.compareTo(a.importance);
-        if (imp != 0) return imp;
-        return b.updatedAt.compareTo(a.updatedAt);
-      });
+      sorted = [...active]
+        ..sort((a, b) {
+          final profileBoost =
+              (b.category == AgentMemoryCategory.profile ? 1 : 0)
+                  .compareTo(a.category == AgentMemoryCategory.profile ? 1 : 0);
+          if (profileBoost != 0) return profileBoost;
+          final conf = b.confidence.compareTo(a.confidence);
+          if (conf != 0) return conf;
+          final imp = b.importance.compareTo(a.importance);
+          if (imp != 0) return imp;
+          return b.updatedAt.compareTo(a.updatedAt);
+        });
     }
 
     final lines = <String>[];

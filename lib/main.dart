@@ -36,6 +36,7 @@ import 'utils/debounced_callback.dart';
 import 'widgets/app_feature_guide.dart';
 import 'widgets/agent_companion/agent_companion_controller.dart';
 import 'widgets/root_shell_host.dart';
+import 'widgets/splash_overlay.dart';
 import 'widgets/app_error_page.dart';
 
 /// 诊断用掉帧记录器（性能排查期开启）。每 3 秒汇报一次窗口内：
@@ -282,7 +283,7 @@ class _TiebaAppState extends State<TiebaApp> with WidgetsBindingObserver {
             child: RootShellHost(child: child),
           );
         },
-        home: const MainScaffold(),
+        home: SplashOverlay(child: const MainScaffold()),
         routes: {
           '/login': (_) => const LoginHubPage(),
           '/qr-login': (_) => const QrLoginPage(),

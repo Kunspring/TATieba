@@ -435,6 +435,7 @@ class TiebaClient {
     String? fname,
     int? fid,
     String? showName,
+    String? stoken,
   }) async {
     await _applyWriteRateLimit(tid);
 
@@ -447,6 +448,7 @@ class TiebaClient {
           fname: fname ?? '',
           fid: fid ?? 0,
           showName: showName ?? '',
+          stoken: stoken,
         );
 
     var result = await doReply(tbs);
@@ -468,6 +470,7 @@ class TiebaClient {
     required int fid,
     required String showName,
     String? parentPid,
+    String? stoken,
   }) async {
     try {
       final now = DateTime.now();
@@ -478,6 +481,9 @@ class TiebaClient {
       commonW.writeString(3, _clientIdentifier);
       commonW.writeString(10, bduss);
       commonW.writeString(11, tbs);
+      if (stoken != null && stoken.isNotEmpty) {
+        commonW.writeString(30, stoken);
+      }
       commonW.writeInt32(1, 2);
       commonW.writeString(36, DeviceIdService.getCuidGalaxy2Cached());
       commonW.writeString(37, DeviceIdService.getDeviceUuid());
@@ -486,7 +492,8 @@ class TiebaClient {
       commonW.writeString(52, DeviceIdService.getAndroidVersion());
       commonW.writeString(53, DeviceIdService.getManufacturer());
       commonW.writeInt32(61, tsMs);
-      commonW.writeString(72, showName.isNotEmpty ? showName : '贴吧网友');
+      final resolvedShowName = showName.isNotEmpty ? showName : '贴吧网友';
+      commonW.writeString(72, resolvedShowName);
       if (showName.isNotEmpty) {
         commonW.writeString(73, showName);
       }
@@ -501,16 +508,18 @@ class TiebaClient {
       dataW.writeString(7, '12');
       dataW.writeString(8, '1');
       dataW.writeString(9, content);
-      if (fid > 0) dataW.writeString(10, fid.toString());
+      if (fid > 0) {
+        dataW.writeString(10, fid.toString());
+        dataW.writeString(16, fid.toString());
+      }
       dataW.writeString(12, '');
       dataW.writeString(13, '');
       dataW.writeString(14, fname);
       dataW.writeString(15, '0');
-      dataW.writeString(16, fid.toString());
       dataW.writeString(17, tid);
       dataW.writeString(18, parentPid ?? '0');
       dataW.writeString(19, '3');
-      dataW.writeString(20, showName.isNotEmpty ? showName : '贴吧网友');
+      dataW.writeString(20, resolvedShowName);
       dataW.writeString(21, '0');
       dataW.writeMessage(39, commonBytes);
       final dataBytes = dataW.toBytes();
@@ -523,6 +532,8 @@ class TiebaClient {
         '/c/c/post/add',
         reqBytes,
         cmdId: '309731',
+        bduss: bduss,
+        stoken: stoken,
       );
       return _parseAddPostResp(respBytes);
     } catch (e) {
@@ -1113,6 +1124,7 @@ class TiebaClient {
     String? fname,
     int? fid,
     String? showName,
+    String? stoken,
   }) async {
     await _applyWriteRateLimit(tid);
 
@@ -1126,6 +1138,7 @@ class TiebaClient {
           fid: fid ?? 0,
           showName: showName ?? '',
           parentPid: pid,
+          stoken: stoken,
         );
 
     var result = await doReply(tbs);
@@ -2490,6 +2503,7 @@ class TiebaClient {
           authorPortrait: authorPortrait,
           content: '',
           cover: cover ?? video?.coverSrc,
+          covers: _extractThreadCovers(item),
           fid: fid,
           video: video,
           barName: barName,
@@ -2542,6 +2556,19 @@ class TiebaClient {
     }
 
     return null;
+  }
+
+  static List<String> _extractThreadCovers(Map item) {
+    final media = item['media'];
+    if (media is! List || media.isEmpty) return [];
+    final covers = <String>[];
+    for (final m in media) {
+      if (m is! Map) continue;
+      final url = _pickCoverImageUrl(m);
+      if (url != null) covers.add(url);
+      if (covers.length >= 3) break;
+    }
+    return covers;
   }
 
   static String? _extractCoverFromMedia(dynamic media) {
@@ -2819,6 +2846,7 @@ class TiebaClient {
     int page = 1,
     String? bduss,
     String? stoken,
+    int sort = 0,
   }) async {
     try {
       final batch = detailCommentPageSize;
@@ -2826,6 +2854,7 @@ class TiebaClient {
         MapEntry('kz', tid),
         MapEntry('pn', page.toString()),
         MapEntry('rn', batch.toString()),
+        MapEntry('sort', sort.toString()),
         MapEntry('with_floor', '1'),
         MapEntry('floor_page_size', batch.toString()),
         MapEntry('sub_floor_page_size', batch.toString()),

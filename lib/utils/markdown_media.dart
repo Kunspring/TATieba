@@ -7,6 +7,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import '../theme/app_colors.dart';
 import '../utils/image_url_helper.dart';
 import '../widgets/post_video_tile.dart';
+import 'save_network_image.dart';
 
 /// 解析 markdown 视频 alt：`video` / `video:|120` / `video:coverUrl|120`
 (String? coverUrl, int? duration) parseVideoMarkdownAlt(String alt) {
@@ -64,6 +65,7 @@ Widget buildMarkdownMedia(
       padding: const EdgeInsets.symmetric(vertical: 0),
       child: GestureDetector(
         onTap: () => onImageTap(url),
+        onLongPress: () => saveNetworkImage(context, url),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(4),
           child: CachedNetworkImage(
@@ -94,6 +96,7 @@ Widget buildMarkdownMedia(
         final placeholderH = min(w / aspect, maxH);
         return GestureDetector(
           onTap: () => onImageTap(url),
+          onLongPress: () => saveNetworkImage(context, url),
           child: ConstrainedBox(
             constraints: BoxConstraints(maxWidth: w, maxHeight: maxH),
             child: ClipRRect(

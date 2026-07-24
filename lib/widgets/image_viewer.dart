@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 
+import '../utils/save_network_image.dart';
 import 'app_toast.dart';
 import 'kaomoji_loader.dart';
 
@@ -168,6 +169,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                   child: GestureDetector(
                     onDoubleTapDown: _onDoubleTapDown,
                     onDoubleTap: _onDoubleTap,
+                    onLongPress: () => saveNetworkImage(context, widget.imageUrl),
                     behavior: HitTestBehavior.opaque,
                     child: SizedBox(
                       width: width,

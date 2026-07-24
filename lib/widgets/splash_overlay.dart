@@ -10,6 +10,9 @@ class SplashOverlay extends StatefulWidget {
   final Widget child;
   final VoidCallback? onDone;
 
+  /// 子页面数据就绪后置为 true，开屏会在最短展示时间过后立即展开。
+  static final ready = ValueNotifier(false);
+
   const SplashOverlay({super.key, required this.child, this.onDone});
 
   @override
@@ -18,42 +21,75 @@ class SplashOverlay extends StatefulWidget {
 
 class _SplashOverlayState extends State<SplashOverlay>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
+  late final AnimationController _revealCtrl;
   late final Animation<double> _kaomojiOpacity;
   late final Animation<double> _revealProgress;
 
-  static const _totalMs = 1400;
-  static const double _shakeEnd = 750 / _totalMs;
-  static const double _fadeEnd = 950 / _totalMs;
-  // circle reveal: _fadeEnd → 1.0
+  bool _ready = false;
+  bool _minTimeElapsed = false;
+  bool _revealing = false;
+
+  static const _revealMs = 650;
+  static const double _fadeFraction = 200 / _revealMs;
+  static const _minDisplayMs = 800;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
+
+    _revealCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: _totalMs),
+      duration: const Duration(milliseconds: _revealMs),
     );
     _kaomojiOpacity = Tween<double>(begin: 1, end: 0).animate(
       CurvedAnimation(
-        parent: _ctrl,
-        curve: const Interval(_shakeEnd, _fadeEnd, curve: Curves.easeOut),
+        parent: _revealCtrl,
+        curve: const Interval(0, _fadeFraction, curve: Curves.easeOut),
       ),
     );
     _revealProgress = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(
-        parent: _ctrl,
-        curve: const Interval(_fadeEnd, 1.0, curve: Curves.easeInCubic),
+        parent: _revealCtrl,
+        curve:
+            const Interval(_fadeFraction, 1.0, curve: Curves.easeInCubic),
       ),
     );
-    _ctrl.forward().then((_) {
-      widget.onDone?.call();
+    _revealCtrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        widget.onDone?.call();
+      }
     });
+
+    if (SplashOverlay.ready.value) {
+      _ready = true;
+    } else {
+      SplashOverlay.ready.addListener(_onReady);
+    }
+
+    Future.delayed(const Duration(milliseconds: _minDisplayMs), () {
+      if (!mounted) return;
+      _minTimeElapsed = true;
+      _tryStartReveal();
+    });
+  }
+
+  void _onReady() {
+    if (!SplashOverlay.ready.value) return;
+    SplashOverlay.ready.removeListener(_onReady);
+    _ready = true;
+    _tryStartReveal();
+  }
+
+  void _tryStartReveal() {
+    if (_revealing || !_ready || !_minTimeElapsed) return;
+    _revealing = true;
+    _revealCtrl.forward();
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    SplashOverlay.ready.removeListener(_onReady);
+    _revealCtrl.dispose();
     super.dispose();
   }
 
@@ -62,41 +98,46 @@ class _SplashOverlayState extends State<SplashOverlay>
     final colors = context.appColors;
 
     return AnimatedBuilder(
-      animation: _ctrl,
+      animation: _revealCtrl,
       builder: (context, _) {
-        final p = _ctrl.value;
+        if (_revealCtrl.isCompleted) return widget.child;
 
-        if (p >= 1.0) return widget.child;
-
+        final isDark = Theme.of(context).brightness == Brightness.dark;
         final size = MediaQuery.sizeOf(context);
         final center = Offset(size.width / 2, size.height / 2);
         final maxR = _maxRadius(size, center);
-        final revealP = _revealProgress.value;
+
+        final revealP = _revealing ? _revealProgress.value : 0.0;
+        final kaomojiAlpha = _revealing ? _kaomojiOpacity.value : 1.0;
+        final shaking =
+            !_revealing || _revealCtrl.value < _fadeFraction;
+
         final revealR = maxR * Curves.easeInCubic.transform(revealP);
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        final shaking = p < _fadeEnd;
-        final kaomojiAlpha = _kaomojiOpacity.value;
 
         return Stack(
           fit: StackFit.expand,
           children: [
-            ColoredBox(color: isDark ? const Color(0xFF1a1a1a) : Colors.white),
+            ColoredBox(
+                color:
+                    isDark ? const Color(0xFF1a1a1a) : Colors.white),
             ClipPath(
-              clipper: _CircleRevealClipper(center: center, radius: revealR),
+              clipper:
+                  _CircleRevealClipper(center: center, radius: revealR),
               clipBehavior: Clip.antiAlias,
               child: widget.child,
             ),
-            IgnorePointer(
-              child: CustomPaint(
-                painter: _SplashRipplePainter(
-                  center: center,
-                  maxRadius: maxR,
-                  progress: revealP,
-                  ringColor: _rippleColor(isDark, colors),
+            if (_revealing && revealP > 0)
+              IgnorePointer(
+                child: CustomPaint(
+                  painter: _SplashRipplePainter(
+                    center: center,
+                    maxRadius: maxR,
+                    progress: revealP,
+                    ringColor: _rippleColor(isDark, colors),
+                  ),
+                  size: size,
                 ),
-                size: size,
               ),
-            ),
             if (kaomojiAlpha > 0)
               IgnorePointer(
                 child: Opacity(
@@ -106,7 +147,8 @@ class _SplashOverlayState extends State<SplashOverlay>
                       mood: AgentKaomojiMood.welcome,
                       size: 36,
                       shaking: shaking,
-                      color: Color(isDark ? 0xFFE0E0E0 : 0xFF333333),
+                      color:
+                          Color(isDark ? 0xFFE0E0E0 : 0xFF333333),
                     ),
                   ),
                 ),
@@ -119,7 +161,8 @@ class _SplashOverlayState extends State<SplashOverlay>
 }
 
 Color _rippleColor(bool isDark, AppColorScheme colors) {
-  return (isDark ? colors.primary : colors.primary).withValues(alpha: 0.18);
+  return (isDark ? colors.primary : colors.primary)
+      .withValues(alpha: 0.18);
 }
 
 double _maxRadius(Size size, Offset center) {
@@ -144,7 +187,8 @@ class _CircleRevealClipper extends CustomClipper<Path> {
 
   @override
   Path getClip(Size size) {
-    return Path()..addOval(Rect.fromCircle(center: center, radius: radius));
+    return Path()
+      ..addOval(Rect.fromCircle(center: center, radius: radius));
   }
 
   @override
@@ -176,7 +220,8 @@ class _SplashRipplePainter extends CustomPainter {
 
     for (var i = 0; i < 4; i++) {
       final ringStart = i * 0.12;
-      final ringProgress = ((progress - ringStart) / 0.76).clamp(0.0, 1.0);
+      final ringProgress =
+          ((progress - ringStart) / 0.76).clamp(0.0, 1.0);
       if (ringProgress <= 0 || ringProgress >= 1) continue;
 
       final r = ringProgress * maxRadius;

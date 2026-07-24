@@ -24,6 +24,7 @@ import '../../theme/app_glass.dart';
 
 import '../../widgets/app_empty_state.dart';
 import '../../widgets/app_loading.dart';
+import '../../widgets/splash_overlay.dart';
 import '../../widgets/bar_forum_header.dart';
 import '../../widgets/kaomoji_loader.dart';
 import '../../widgets/app_skeleton.dart';
@@ -263,6 +264,11 @@ class _HomePageState extends State<HomePage>
       _loadBarContext();
     } else if (_isSingleBar) {
       _loadBarContext(loggedIn: false);
+    }
+
+    // 有缓存数据即刻通知开屏；无缓存则等 _loadPosts 网络回调
+    if (!shouldAutoLoad) {
+      SplashOverlay.ready.value = true;
     }
   }
 
@@ -516,6 +522,7 @@ class _HomePageState extends State<HomePage>
         _loading = false;
         _hasMore = TiebaCrawlerService.hasMore;
       });
+      SplashOverlay.ready.value = true;
       _scheduleRecommendLevelEnrich();
       _persistSession();
       _scheduleScrollCheck();
@@ -525,6 +532,7 @@ class _HomePageState extends State<HomePage>
         _loading = false;
         _hasMore = false;
       });
+      SplashOverlay.ready.value = true;
     }
   }
 
@@ -578,6 +586,7 @@ class _HomePageState extends State<HomePage>
             _loading = false;
             _hasMore = results.last.isNotEmpty;
           });
+          SplashOverlay.ready.value = true;
           await _appendPostsChunked(posts);
           if (!mounted) return;
           _patchFavoriteStatusLater(posts);

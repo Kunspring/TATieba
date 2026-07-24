@@ -74,13 +74,13 @@ class _SplashOverlayState extends State<SplashOverlay>
         final revealP = _revealProgress.value;
         final revealR = maxR * Curves.easeInCubic.transform(revealP);
         final isDark = Theme.of(context).brightness == Brightness.dark;
-        final shaking = p < _shakeEnd;
+        final shaking = p < _fadeEnd;
         final kaomojiAlpha = _kaomojiOpacity.value;
 
         return Stack(
           fit: StackFit.expand,
           children: [
-            const ColoredBox(color: Colors.white),
+            ColoredBox(color: isDark ? const Color(0xFF1a1a1a) : Colors.white),
             ClipPath(
               clipper: _CircleRevealClipper(center: center, radius: revealR),
               clipBehavior: Clip.antiAlias,
@@ -106,7 +106,7 @@ class _SplashOverlayState extends State<SplashOverlay>
                       mood: AgentKaomojiMood.welcome,
                       size: 36,
                       shaking: shaking,
-                      color: const Color(0xFF333333),
+                      color: Color(isDark ? 0xFFE0E0E0 : 0xFF333333),
                     ),
                   ),
                 ),

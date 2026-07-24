@@ -25,8 +25,8 @@ class AgentChatOverlayHost extends StatefulWidget {
 
 class _AgentChatOverlayHostState extends State<AgentChatOverlayHost>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  static const _openDuration = Duration(milliseconds: 720);
-  static const _closeDuration = Duration(milliseconds: 480);
+  static const _openDuration = Duration(milliseconds: 900);
+  static const _closeDuration = Duration(milliseconds: 600);
 
   bool _linked = false;
   bool _open = false;

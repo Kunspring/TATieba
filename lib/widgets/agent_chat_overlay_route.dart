@@ -7,8 +7,8 @@ import 'agent_ripple_overlay.dart';
 class AgentChatOverlayRoute {
   static const routeName = '/agent-chat-overlay';
 
-  static const _openDuration = Duration(milliseconds: 720);
-  static const _closeDuration = Duration(milliseconds: 480);
+  static const _openDuration = Duration(milliseconds: 900);
+  static const _closeDuration = Duration(milliseconds: 600);
 
   static PageRoute<void> create() {
     return PageRouteBuilder<void>(

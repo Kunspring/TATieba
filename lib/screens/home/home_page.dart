@@ -247,22 +247,6 @@ class _HomePageState extends State<HomePage>
       _scheduleRecommendLevelEnrich();
     }
 
-    // 冷启动且已有缓存内容时，首帧后静默刷新首页：既保证秒开，又让内容保持最新。
-    if (!shouldAutoLoad && _posts.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _autoRefresh(true);
-      });
-    }
-
-    final offset = snapshot?.scrollOffset ?? 0;
-    if (offset > 0) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_scrollController.hasClients) return;
-        final max = _scrollController.position.maxScrollExtent;
-        _scrollController.jumpTo(offset.clamp(0.0, max));
-      });
-    }
-
     if (loggedIn && _isSingleBar) {
       _loadBarContext();
     } else if (_isSingleBar) {

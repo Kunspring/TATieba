@@ -29,7 +29,7 @@ class _SplashOverlayState extends State<SplashOverlay>
   bool _minTimeElapsed = false;
   bool _revealing = false;
 
-  static const _revealMs = 650;
+  static const _revealMs = 900;
   static const double _fadeFraction = 200 / _revealMs;
   static const _minDisplayMs = 800;
 
@@ -119,7 +119,7 @@ class _SplashOverlayState extends State<SplashOverlay>
           children: [
             ColoredBox(
                 color:
-                    isDark ? const Color(0xFF1a1a1a) : Colors.white),
+                    isDark ? const Color(0xFF1a1a1a) : colors.scaffold),
             ClipPath(
               clipper:
                   _CircleRevealClipper(center: center, radius: revealR),
@@ -214,21 +214,16 @@ class _SplashRipplePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (progress <= 0 || progress >= 1) return;
 
+    final currentRadius = maxRadius * progress;
+
     final paint = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = 2.5;
 
-    for (var i = 0; i < 4; i++) {
-      final ringStart = i * 0.12;
-      final ringProgress =
-          ((progress - ringStart) / 0.76).clamp(0.0, 1.0);
-      if (ringProgress <= 0 || ringProgress >= 1) continue;
-
-      final r = ringProgress * maxRadius;
-      final opacity = (1.0 - ringProgress) * 0.6;
-      paint.color = ringColor.withValues(alpha: opacity);
-      canvas.drawCircle(center, r, paint);
-    }
+    final wave = (progress * 1.15).clamp(0.0, 1.0);
+    final r = currentRadius;
+    paint.color = ringColor.withValues(alpha: (1 - wave) * 0.55);
+    canvas.drawCircle(center, r, paint);
   }
 
   @override

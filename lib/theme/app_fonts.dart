@@ -9,8 +9,6 @@ abstract final class AppFonts {
   static const double lineHeightNormal = 1.5;
   static const double lineHeightRelaxed = 1.55;
 
-  static const String fontFamily = 'SimSun';
-
   static TextStyle _withDefaults({
     double fontSize = 14,
     FontWeight fontWeight = FontWeight.w400,
@@ -24,7 +22,6 @@ abstract final class AppFonts {
       height: height,
       letterSpacing: letterSpacing,
       color: color,
-      fontFamily: fontFamily,
       leadingDistribution: TextLeadingDistribution.even,
     );
   }
@@ -47,7 +44,7 @@ abstract final class AppFonts {
 
   static TextStyle title({Color? color}) => _withDefaults(
     fontSize: 17,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w700,
     height: lineHeightNormal,
     letterSpacing: letterSpacingChinese,
     color: color,
@@ -55,7 +52,7 @@ abstract final class AppFonts {
 
   static TextStyle body({Color? color}) => _withDefaults(
     fontSize: 14,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600,
     height: lineHeightRelaxed,
     letterSpacing: letterSpacingChinese,
     color: color,
@@ -63,7 +60,7 @@ abstract final class AppFonts {
 
   static TextStyle bodySmall({Color? color}) => _withDefaults(
     fontSize: 13,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600,
     height: lineHeightNormal,
     letterSpacing: letterSpacingChinese,
     color: color,
@@ -71,7 +68,7 @@ abstract final class AppFonts {
 
   static TextStyle caption({Color? color}) => _withDefaults(
     fontSize: 12,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w700,
     height: lineHeightNormal,
     letterSpacing: letterSpacingChinese,
     color: color,
@@ -79,7 +76,7 @@ abstract final class AppFonts {
 
   static TextStyle label({Color? color}) => _withDefaults(
     fontSize: 11,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w700,
     height: 1.2,
     letterSpacing: 0.5,
     color: color,
@@ -95,7 +92,7 @@ abstract final class AppFonts {
 
   static TextStyle numeric({Color? color}) => _withDefaults(
     fontSize: 12,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w700,
     height: 1.0,
     letterSpacing: -0.3,
     color: color,
@@ -103,7 +100,7 @@ abstract final class AppFonts {
 
   static TextStyle count({Color? color}) => _withDefaults(
     fontSize: 11,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w700,
     height: 1.0,
     letterSpacing: -0.2,
     color: color,

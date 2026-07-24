@@ -205,86 +205,87 @@ class _PostDetailPageState extends State<PostDetailPage> {
   }
 
   Widget _buildReplyBar(AppColorScheme colors) {
-    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final mediaQuery = MediaQuery.of(context);
+    final keyboardInset = mediaQuery.viewInsets.bottom;
+    final systemBottom = mediaQuery.viewPadding.bottom;
 
     return AnimatedPadding(
       duration: const Duration(milliseconds: 100),
       curve: Curves.easeOut,
-      padding: EdgeInsets.only(bottom: keyboardInset),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-          child: glassSurface(
-            colors: colors,
-            borderRadius: BorderRadius.circular(28),
-            strong: true,
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _replyCtrl,
-                    focusNode: _replyFocus,
-                    enabled: !_replySending,
-                    minLines: 1,
-                    maxLines: 5,
-                    textAlignVertical: TextAlignVertical.center,
-                    textInputAction: TextInputAction.newline,
-                    style: AppFonts.body(color: colors.textPrimary).copyWith(
-                      height: 1.0,
-                      leadingDistribution: TextLeadingDistribution.even,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: '发表评论…',
-                      hintStyle:
-                          AppFonts.body(color: colors.textMuted).copyWith(
-                            height: 1.0,
-                            leadingDistribution: TextLeadingDistribution.even,
-                          ),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      filled: false,
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 2,
-                        vertical: 12,
-                      ),
+      padding: EdgeInsets.only(
+        bottom: keyboardInset > 0 ? keyboardInset : systemBottom + 2,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 2),
+        child: glassSurface(
+          colors: colors,
+          borderRadius: BorderRadius.circular(28),
+          strong: true,
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _replyCtrl,
+                  focusNode: _replyFocus,
+                  enabled: !_replySending,
+                  minLines: 1,
+                  maxLines: 5,
+                  textAlignVertical: TextAlignVertical.center,
+                  textInputAction: TextInputAction.newline,
+                  style: AppFonts.body(color: colors.textPrimary).copyWith(
+                    height: 1.0,
+                    leadingDistribution: TextLeadingDistribution.even,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '发表评论…',
+                    hintStyle:
+                        AppFonts.body(color: colors.textMuted).copyWith(
+                          height: 1.0,
+                          leadingDistribution: TextLeadingDistribution.even,
+                        ),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    filled: false,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 2,
+                      vertical: 8,
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                _replySending
-                    ? SizedBox(
-                        width: 40,
-                        height: 40,
-                        child: Center(
-                          child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: colors.primary,
-                            ),
+              ),
+              const SizedBox(width: 10),
+              _replySending
+                  ? SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: Center(
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colors.primary,
                           ),
                         ),
-                      )
-                    : ListenableBuilder(
-                        listenable: _replyCtrl,
-                        builder: (context, _) {
-                          final canSend =
-                              _replyCtrl.text.trim().isNotEmpty;
-                          return _CapsuleSendButton(
-                            colors: colors,
-                            enabled: canSend,
-                            onSend: _submitReply,
-                          );
-                        },
                       ),
-              ],
-            ),
+                    )
+                  : ListenableBuilder(
+                      listenable: _replyCtrl,
+                      builder: (context, _) {
+                        final canSend =
+                            _replyCtrl.text.trim().isNotEmpty;
+                        return _CapsuleSendButton(
+                          colors: colors,
+                          enabled: canSend,
+                          onSend: _submitReply,
+                        );
+                      },
+                    ),
+            ],
           ),
         ),
       ),
@@ -348,7 +349,7 @@ class _PostDetailPageState extends State<PostDetailPage> {
           Positioned(
             left: 0,
             right: 0,
-            bottom: 8,
+            bottom: 0,
             child: _buildReplyBar(colors),
           ),
         ],
@@ -379,7 +380,7 @@ enum CommentSort { hot, asc, desc }
 
 class _PostDetailBodyState extends State<_PostDetailBody>
     with AutomaticKeepAliveClientMixin {
-  static const _floatingBarPad = 80.0;
+  static const _floatingBarPad = 68.0;
   CommentSort _commentSort = CommentSort.hot;
   bool _postLiking = false;
   OverlayEntry? _likeEffectOverlay;

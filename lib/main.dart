@@ -284,7 +284,10 @@ class _TiebaAppState extends State<TiebaApp> with WidgetsBindingObserver {
             child: RootShellHost(child: child),
           );
         },
-        home: SplashOverlay(child: const MainScaffold()),
+        home: SplashOverlay(
+          child: const MainScaffold(),
+          onDone: () => _companion.dismissSplash(),
+        ),
         routes: {
           '/login': (_) => const LoginHubPage(),
           '/qr-login': (_) => const QrLoginPage(),
@@ -415,6 +418,9 @@ class _CircularRevealTransitionBuilder extends PageTransitionsBuilder {
   const _CircularRevealTransitionBuilder();
 
   @override
+  Duration get transitionDuration => const Duration(milliseconds: 900);
+
+  @override
   Widget buildTransitions<T>(
     PageRoute<T> route,
     BuildContext context,
@@ -422,21 +428,29 @@ class _CircularRevealTransitionBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    final colors = Theme.of(context).extension<AppColorScheme>()!;
     return AnimatedBuilder(
       animation: animation,
       builder: (context, _) {
         final curved = Curves.easeOutCubic.transform(animation.value);
-        if (curved <= 0) return const SizedBox.expand();
+        if (curved <= 0) {
+          return ColoredBox(color: colors.scaffold);
+        }
 
         final size = MediaQuery.sizeOf(context);
         final center = Offset(size.width / 2, size.height / 2);
         final maxR = _transitionMaxRadius(size, center);
         final radius = maxR * curved;
 
-        return ClipPath(
-          clipper: _CircleClipClipper(center: center, radius: radius),
-          clipBehavior: Clip.antiAlias,
-          child: child,
+        return Stack(
+          children: [
+            ColoredBox(color: colors.scaffold),
+            ClipPath(
+              clipper: _CircleClipClipper(center: center, radius: radius),
+              clipBehavior: Clip.antiAlias,
+              child: child,
+            ),
+          ],
         );
       },
     );

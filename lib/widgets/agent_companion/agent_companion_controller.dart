@@ -84,7 +84,15 @@ class AgentCompanionController extends ChangeNotifier {
   static const _murmurMinDisplay = Duration(seconds: 2);
   static const _murmurMaxDisplay = Duration(seconds: 10);
 
-  bool get showBarCompanion => !agentChatOpen;
+  bool splashActive = true;
+
+  void dismissSplash() {
+    if (!splashActive) return;
+    splashActive = false;
+    notifyListeners();
+  }
+
+  bool get showBarCompanion => !agentChatOpen && !splashActive;
 
   /// 顶栏颜文字水平位移（单独通知，避免整页 rebuild）。
   final ValueNotifier<({double offsetX, bool snap})> layoutMotion =

@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../theme/app_fonts.dart';
 import '../utils/agent_kaomoji_mood.dart';
 
 /// AI 助手颜文字形象：随语境换表情，工作时逐字抖动。
@@ -65,11 +64,15 @@ class _AgentKaomojiState extends State<AgentKaomoji>
   }
 
   TextStyle _faceStyle(Color color) {
-    return AppFonts.body(color: color).copyWith(
+    return TextStyle(
+      fontFamily: 'Roboto',
       fontSize: widget.size,
+      fontWeight: FontWeight.w400,
       height: 1.1,
       letterSpacing: 0,
-      fontFamily: null,
+      color: color,
+      decoration: TextDecoration.none,
+      leadingDistribution: TextLeadingDistribution.even,
     );
   }
 
